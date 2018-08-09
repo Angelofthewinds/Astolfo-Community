@@ -21,6 +21,7 @@ import org.springframework.boot.web.servlet.ServletContextInitializer
 import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
 import org.springframework.web.servlet.HandlerExceptionResolver
+import xyz.astolfo.astolfocommunity.cluster.ClusterWebSocketClient
 import xyz.astolfo.astolfocommunity.commands.MessageListener
 import xyz.astolfo.astolfocommunity.messages.MessageCache
 import xyz.astolfo.astolfocommunity.modules.admin.JoinLeaveManager
@@ -43,6 +44,7 @@ class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
     final val shardManager: ShardManager
     // TODO: Move this to a better location
     final val staffMemberIds = properties.staffMemberIds.split(",").mapNotNull { it.toLongOrNull() }
+    final val clusterWebSocketClient = ClusterWebSocketClient(this)
     final val statsDClient = NonBlockingStatsDClient(properties.datadog_prefix, "localhost", 8125, "tag:value")
 
     init {
@@ -59,6 +61,7 @@ class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
                 .setShardsTotal(properties.shard_count)
         if (properties.custom_gateway_enabled) shardManagerBuilder.setSessionController(AstolfoSessionController(properties.custom_gateway_url, properties.custom_gateway_delay))
         shardManager = shardManagerBuilder.build()
+        clusterWebSocketClient.init()
         statsListener.init()
         launch {
             while (isActive && shardManager.shardsRunning != shardManager.shardsTotal) delay(1000)
@@ -101,6 +104,7 @@ class AstolfoProperties {
     var patreon_auth = ""
     var sentry_dsn = ""
     var genius_token = ""
+    var cluster_ip = ""
 }
 
 class StatsListener(val application: AstolfoCommunityApplication) : ListenerAdapter() {

@@ -1,13 +1,12 @@
 package xyz.astolfo.astolfocommunity
 
 import io.sentry.Sentry
-import kotlinx.coroutines.experimental.CoroutineStart
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
 import kotlinx.coroutines.experimental.channels.sendBlocking
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import kotlinx.coroutines.experimental.sync.Mutex
+import kotlinx.coroutines.experimental.sync.withLock
 import okhttp3.*
 import okio.ByteString
 import org.slf4j.LoggerFactory
@@ -29,7 +28,19 @@ class AstolfoWebSocketClient(val wsName: String, private val requestBuilder: Req
     private val wsListener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             logger.info("[$wsName WS] Connected!")
+            failedConnects = 0
+            runBlocking(websocketContext) {
+                messagesToSendMutex.withLock {
+                    val messagesSent = mutableListOf<String>()
+                    for (message in messagesToSend) {
+                        if(!webSocket.send(message)) break
+                        messagesSent.add(message)
+                    }
+                    messagesToSend.removeAll(messagesSent)
+                }
+            }
         }
+
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             logger.info("[$wsName WS] Socket Closed!")
             listener.onClosed(webSocket, code, reason)
@@ -40,6 +51,7 @@ class AstolfoWebSocketClient(val wsName: String, private val requestBuilder: Req
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
             logger.info("[$wsName WS] Socket Failure!")
             listener.onFailure(webSocket, t, response)
+            failedConnects++
             connected = false
             wsActor.sendBlocking(Closed)
         }
@@ -51,6 +63,10 @@ class AstolfoWebSocketClient(val wsName: String, private val requestBuilder: Req
     private lateinit var ws: WebSocket
     private var connected = false
     private var requestedConnected = false
+    private var failedConnects = 0
+
+    private var messagesToSend = mutableListOf<String>()
+    private var messagesToSendMutex = Mutex()
 
     private var destroyed = false
 
@@ -78,7 +94,6 @@ class AstolfoWebSocketClient(val wsName: String, private val requestBuilder: Req
                 try {
                     val wsRequest = requestBuilder.build()
                     ws = ASTOLFO_WS_CLIENT.newWebSocket(wsRequest, wsListener)
-                    connected = true
                 } catch (e: Throwable) {
                     e.printStackTrace()
                     Sentry.capture(e)
@@ -100,20 +115,30 @@ class AstolfoWebSocketClient(val wsName: String, private val requestBuilder: Req
                 handleEvent(Reconnect)
             }
             is Reconnect -> {
-                logger.info("[$wsName WS] Reconnecting...")
+                val seconds = (30L * failedConnects).coerceIn(30, 5 * 60)
+                logger.info("[$wsName WS] Reconnecting in $seconds seconds...")
                 if (connected) handleEvent(Disconnect)
                 connected = false // Just to make sure
                 requestedConnected = true
                 launch(context = websocketContext) {
-                    delay(30, TimeUnit.SECONDS) // wait 30 seconds before reconnecting
+                    delay(seconds, TimeUnit.SECONDS) // wait 30 seconds before reconnecting
                     if (requestedConnected) wsActor.send(Connect)
                 }
             }
         }
     }
 
-    fun start() {
-        wsActor.sendBlocking(Connect)
+    suspend fun send(message: String) = messagesToSendMutex.withLock {
+        if (messagesToSend.isNotEmpty() || !connected || !ws.send(message))
+            messagesToSend.add(message)
+    }
+
+    fun startBlocking() = runBlocking(websocketContext) {
+        start()
+    }
+
+    suspend fun start() {
+        wsActor.send(Connect)
     }
 
     fun dispose() {

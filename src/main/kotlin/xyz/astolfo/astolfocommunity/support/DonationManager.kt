@@ -183,7 +183,7 @@ class DonationManager(private val application: AstolfoCommunityApplication,
 
         AstolfoWebSocketClient("Patreon", Request.Builder()
                 .url(properties.patreon_url)
-                .header("Authorization", properties.patreon_auth), wsListener).start()
+                .header("Authorization", properties.patreon_auth), wsListener).startBlocking()
     }
 
     fun getByMember(member: Member): SupportLevel {
@@ -198,7 +198,7 @@ class DonationManager(private val application: AstolfoCommunityApplication,
     fun give(idLong: Long) = synchronized(entries) {
         remove(idLong)
         // Add new
-        entries.add(PatreonEntry(idLong, idLong, SupportLevel.SUPPORTER.rewardId,  SupportLevel.SUPPORTER.cost))
+        entries.add(PatreonEntry(idLong, idLong, SupportLevel.SUPPORTER.rewardId, SupportLevel.SUPPORTER.cost))
     }
 
     fun remove(idLong: Long) = synchronized(entries) {
