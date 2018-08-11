@@ -105,6 +105,7 @@ class AstolfoProperties {
     var sentry_dsn = ""
     var genius_token = ""
     var cluster_ip = ""
+    var patreon_bot = false
 }
 
 class StatsListener(val application: AstolfoCommunityApplication) : ListenerAdapter() {
