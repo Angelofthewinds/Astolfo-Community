@@ -18,6 +18,7 @@ class ClusterWebSocketClient(private val application: AstolfoCommunityApplicatio
 
     private sealed class ClusterWSEvent {
         class UpdateStats(val stats: List<ShardStats>) : ClusterWSEvent()
+        class OutgoingEvent(val outgoingEvent: ClusterOutgoingEvent) : ClusterWSEvent()
     }
 
     private val clusterActor = actor<ClusterWSEvent>(capacity = Channel.UNLIMITED) {
@@ -43,6 +44,7 @@ class ClusterWebSocketClient(private val application: AstolfoCommunityApplicatio
                 .header("clusterId", "0")
                 .header("shardRangeStart", "0")
                 .header("shardRangeEnd", (application.properties.shard_count - 1).toString())
+                .header("shardtotal", (application.properties.shard_count - 1).toString())
 
         webSocketClient = AstolfoWebSocketClient("Cluster", request, object : WebSocketListener() {
 
