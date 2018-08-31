@@ -1,10 +1,12 @@
 package xyz.astolfo.astolfocommunity.commands
 
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
 import io.sentry.Sentry
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import kotlinx.coroutines.experimental.withTimeout
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import java.util.concurrent.TimeUnit
@@ -14,21 +16,18 @@ class GuildListener(
         val messageListener: MessageListener
 ) {
 
-    private val cleanUpJob = launch(MessageListener.messageProcessorContext) {
-        while (isActive && !destroyed) {
-            // Clean up every 5 minutes
-            delay(5, TimeUnit.MINUTES)
-            messageActor.send(CleanUp)
-        }
+    companion object {
+        private val processorContext = newFixedThreadPoolContext(10, "Guild Message Processor")
     }
 
     private var destroyed = false
 
-    suspend fun addMessage(messageData: MessageListener.MessageData) = messageActor.send(GuildMessage(messageData))
-
-    private interface GuildMessageEvent
-    private class GuildMessage(val messageData: MessageListener.MessageData) : GuildMessageEvent
-    private object CleanUp : GuildMessageEvent
+    private val listenerCacheMap = CacheBuilder.newBuilder()
+            .expireAfterAccess(10, TimeUnit.MINUTES)
+            .removalListener<Long, ChannelListener> { it.value.dispose() }
+            .build(object : CacheLoader<Long, ChannelListener>() {
+                override fun load(guildId: Long): ChannelListener = ChannelListener(application, this@GuildListener)
+            })
 
     class GuildMessageData(
             val prefixMatched: String,
@@ -36,77 +35,49 @@ class GuildListener(
             timeIssued: Long
     ) : MessageListener.MessageData(messageReceivedEvent, timeIssued)
 
-    private val messageActor = actor<GuildMessageEvent>(context = MessageListener.messageProcessorContext, capacity = Channel.UNLIMITED) {
-        for (event in channel) {
+    private val messageActor = actor<MessageListener.MessageData>(context = processorContext, capacity = Channel.UNLIMITED) {
+        for (messageData in channel) {
             if (destroyed) continue
             try {
-                handleEvent(event)
+                withTimeout(15, TimeUnit.SECONDS) {
+                    handleData(messageData)
+                }
             } catch (e: Throwable) {
                 e.printStackTrace()
                 Sentry.capture(e)
             }
         }
-        channelListeners.forEach { it.value.listener.dispose() }
+        listenerCacheMap.invalidateAll()
     }
 
-    private val channelListeners = mutableMapOf<Long, CacheEntry>()
+    suspend fun addMessage(messageData: MessageListener.MessageData) = messageActor.send(messageData)
 
-    private suspend fun handleEvent(event: GuildMessageEvent) {
-        when (event) {
-            is CleanUp -> {
-                val currentTime = System.currentTimeMillis()
-                val expiredListeners = mutableListOf<Long>()
-                for ((key, value) in channelListeners) {
-                    val deltaTime = currentTime - value.lastUsed
-                    // Remove if its older then 10 minutes
-                    if (deltaTime > TimeUnit.MINUTES.toSeconds(10)) {
-                        value.listener.dispose()
-                        // println("REMOVE CHANNELLISTENER: ${guild.idLong}/$key")
-                        expiredListeners.add(key)
-                    }
-                }
-                expiredListeners.forEach { channelListeners.remove(it) }
-            }
-            is GuildMessage -> {
-                val messageData = event.messageData
-                val botId = event.messageData.messageReceivedEvent.jda.selfUser.idLong
-                val prefix = application.astolfoRepositories.getEffectiveGuildSettings(messageData.messageReceivedEvent.guild.idLong).getEffectiveGuildPrefix(application)
-                val channel = messageData.messageReceivedEvent.channel!!
+    private suspend fun handleData(messageData: MessageListener.MessageData) {
+        val botId = messageData.messageReceivedEvent.jda.selfUser.idLong
+        val prefix = application.astolfoRepositories.getEffectiveGuildSettings(messageData.messageReceivedEvent.guild.idLong).getEffectiveGuildPrefix(application)
+        val channel = messageData.messageReceivedEvent.channel!!
 
-                val rawMessage = messageData.messageReceivedEvent.message.contentRaw!!
-                val validPrefixes = listOf(prefix, "<@$botId>", "<@!$botId>")
+        val rawMessage = messageData.messageReceivedEvent.message.contentRaw!!
+        val validPrefixes = listOf(prefix, "<@$botId>", "<@!$botId>")
 
-                val matchedPrefix = validPrefixes.find { rawMessage.startsWith(it, true) }
+        val matchedPrefix = validPrefixes.find { rawMessage.startsWith(it, true) }
 
-                val guildMessageData = GuildMessageData(matchedPrefix ?: "",
-                        messageData.messageReceivedEvent, messageData.timeIssued)
+        val guildMessageData = GuildMessageData(matchedPrefix ?: "",
+                messageData.messageReceivedEvent, messageData.timeIssued)
 
-                // This only is true when a user says a normal message
-                if (matchedPrefix == null) {
-                    val channelEntry = channelListeners[channel.idLong]
-                            ?: return // Ignore if channel listener is invalid
-                    channelEntry.lastUsed = System.currentTimeMillis()
-                    channelEntry.listener.addMessage(guildMessageData)
-                    return
-                }
-                // Process the message as if it was a command
-                val entry = channelListeners.computeIfAbsent(channel.idLong) {
-                    // Create channel listener if it doesn't exist
-                    //println("CREATE CHANNELLISTENER: ${guild.idLong}/${channel.idLong}")
-                    CacheEntry(ChannelListener(application, this), System.currentTimeMillis())
-                }
-                entry.lastUsed = System.currentTimeMillis()
-                entry.listener.addCommand(guildMessageData)
-            }
+        // This only is true when a user says a normal message
+        if (matchedPrefix == null) {
+            // Ignore if channel listener is invalid
+            listenerCacheMap.getIfPresent(channel.idLong)?.addMessage(guildMessageData)
+            return
         }
+        // Process the message as if it was a command
+        listenerCacheMap.get(channel.idLong).addCommand(guildMessageData)
     }
 
     fun dispose() {
         destroyed = true
-        cleanUpJob.cancel()
         messageActor.close()
     }
-
-    private class CacheEntry(val listener: ChannelListener, var lastUsed: Long)
 
 }

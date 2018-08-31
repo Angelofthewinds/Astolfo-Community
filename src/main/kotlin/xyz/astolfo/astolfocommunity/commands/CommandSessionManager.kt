@@ -1,6 +1,7 @@
 package xyz.astolfo.astolfocommunity.commands
 
 import kotlinx.coroutines.experimental.*
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
@@ -29,10 +30,10 @@ class CommandSessionImpl(override val commandPath: String) : CommandSession {
     override fun removeListener(listener: CommandSession.SessionListener) = listeners.remove(listener)
     override fun getListeners() = listeners.toList()
 
-    override fun onMessageReceived(execution: CommandExecution): CommandSession.ResponseAction {
+    override suspend fun onMessageReceived(commandScope: CommandScope): CommandSession.ResponseAction {
         var action = CommandSession.ResponseAction.RUN_COMMAND
         loop@ for (it in listeners.toList()) {
-            val listenerAction = it.onMessageReceived(execution)
+            val listenerAction = it.onMessageReceived(commandScope)
             when (listenerAction) {
                 CommandSession.ResponseAction.UNREGISTER_LISTENER -> removeListener(it)
                 CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER -> {
@@ -73,7 +74,7 @@ class InheritedCommandSession(override val commandPath: String) : CommandSession
         throw inheritedError()
     }
 
-    override fun onMessageReceived(execution: CommandExecution): CommandSession.ResponseAction {
+    override suspend fun onMessageReceived(commandScope: CommandScope): CommandSession.ResponseAction {
         throw inheritedError()
     }
 
@@ -92,12 +93,12 @@ interface CommandSession {
     fun removeListener(listener: SessionListener): Boolean
     fun getListeners(): List<SessionListener>
 
-    fun onMessageReceived(execution: CommandExecution): ResponseAction
+    suspend fun onMessageReceived(commandScope: CommandScope): ResponseAction
 
     fun destroy()
 
     open class SessionListener {
-        open fun onMessageReceived(execution: CommandExecution) = ResponseAction.NOTHING
+        open suspend fun onMessageReceived(commandScope: CommandScope) = ResponseAction.NOTHING
         @Deprecated("Use suspending functions instead")
         open fun onSessionDestroyed() {
         }

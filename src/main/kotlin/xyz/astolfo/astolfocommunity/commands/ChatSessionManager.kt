@@ -12,7 +12,7 @@ import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
 import io.sentry.Sentry
 import net.dv8tion.jda.core.entities.Member
-import xyz.astolfo.astolfocommunity.ASTOLFO_GSON
+import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
 import xyz.astolfo.astolfocommunity.AstolfoProperties
 import java.util.*
 import java.util.concurrent.TimeUnit

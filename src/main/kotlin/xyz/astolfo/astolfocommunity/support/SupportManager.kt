@@ -1,7 +1,6 @@
 package xyz.astolfo.astolfocommunity.support
 
 import xyz.astolfo.astolfocommunity.commands.CommandBuilder
-import xyz.astolfo.astolfocommunity.messages.embed
 import java.util.concurrent.TimeUnit
 
 fun CommandBuilder.supportBuilder(block: SupportBuilder.() -> Unit) {
@@ -25,9 +24,9 @@ class SupportBuilder(private val commandBuilder: CommandBuilder) {
             // Check if user has valid support role
             val donationEntry = application.donationManager.getByDiscordId(event.author.idLong)
             if (donationEntry != null && donationEntry.supportLevel.ordinal >= supportLevel!!.ordinal) return@inheritedAction true
-            if(upvoteDays <= 0) {
-                messageAction(embed("You can unlock this feature by becoming a [patreon](https://www.patreon.com/theprimedtnt)" +
-                        " and getting at least the **${supportLevel!!.rewardName}** Reward.")).queue()
+            if (upvoteDays <= 0) {
+                embed("You can unlock this feature by becoming a [patreon](https://www.patreon.com/theprimedtnt)" +
+                        " and getting at least the **${supportLevel!!.rewardName}** Reward.").queue()
                 return@inheritedAction false
             }
         }
@@ -37,12 +36,12 @@ class SupportBuilder(private val commandBuilder: CommandBuilder) {
             val upvoteInfo = profile.userUpvote
             val message = when {
                 upvoteInfo.lastUpvote <= 0 || upvoteInfo.timeSinceLastUpvote >= TimeUnit.DAYS.toMillis(upvoteDays + 3) -> longTermUpvoteMessage
-                upvoteInfo.timeSinceLastUpvote >= TimeUnit.DAYS.toMillis(upvoteDays) ->  shortTermUpvoteMessage.invoke(upvoteDays)
+                upvoteInfo.timeSinceLastUpvote >= TimeUnit.DAYS.toMillis(upvoteDays) -> shortTermUpvoteMessage.invoke(upvoteDays)
                 else -> null
             } ?: return@inheritedAction true
             val stringBuilder = StringBuilder(message)
             stringBuilder.append(" Upvote at [discordbots.org](https://discordbots.org/bot/${event.jda.selfUser.idLong})")
-            if(supportLevel != null){
+            if (supportLevel != null) {
                 stringBuilder.append(" You can also unlock this feature by becoming a [patreon](https://www.patreon.com/theprimedtnt)" +
                         " and getting at least the **${supportLevel!!.rewardName}** Reward.")
             }

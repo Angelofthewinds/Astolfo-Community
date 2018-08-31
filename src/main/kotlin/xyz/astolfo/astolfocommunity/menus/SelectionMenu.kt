@@ -7,32 +7,32 @@ import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.Role
 import net.dv8tion.jda.core.entities.TextChannel
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
 import xyz.astolfo.astolfocommunity.commands.CommandSession
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.messages.*
 import java.util.concurrent.atomic.AtomicReference
 
-fun CommandExecution.memberSelectionBuilder(query: String) = selectionBuilder<Member>()
+fun CommandScope.memberSelectionBuilder(query: String) = selectionBuilder<Member>()
         .results(FinderUtil.findMembers(query, event.guild))
         .noResultsMessage("Unknown Member!")
         .resultsRenderer { "**${it.effectiveName} (${it.user.name}#${it.user.discriminator})**" }
         .description("Type the number of the member you want.")
 
-fun CommandExecution.textChannelSelectionBuilder(query: String) = selectionBuilder<TextChannel>()
+fun CommandScope.textChannelSelectionBuilder(query: String) = selectionBuilder<TextChannel>()
         .results(FinderUtil.findTextChannels(query, event.guild))
         .noResultsMessage("Unknown Text Channel!")
         .resultsRenderer { "**${it.name} (${it.id})**" }
         .description("Type the number of the text channel you want.")
 
-fun CommandExecution.roleSelectionBuilder(query: String) = selectionBuilder<Role>()
+fun CommandScope.roleSelectionBuilder(query: String) = selectionBuilder<Role>()
         .results(FinderUtil.findRoles(query, event.guild))
         .noResultsMessage("Unknown Role!")
         .resultsRenderer { "**${it.name} (${it.id})**" }
         .description("Type the number of the role you want.")
 
-fun <E> CommandExecution.selectionBuilder() = SelectionMenuBuilder<E>(this)
+fun <E> CommandScope.selectionBuilder() = SelectionMenuBuilder<E>(this)
 
-class SelectionMenuBuilder<E>(private val execution: CommandExecution) {
+class SelectionMenuBuilder<E>(private val commandScope: CommandScope) {
     var title = "Selection Menu"
     var results = emptyList<E>()
     var noResultsMessage = "No results!"
@@ -55,9 +55,9 @@ class SelectionMenuBuilder<E>(private val execution: CommandExecution) {
     fun renderer(value: Paginator.() -> Message) = apply { renderer = value }
     fun description(value: String) = apply { description = value }
 
-    suspend fun execute(): E? = with(execution) {
+    suspend fun execute(): E? = with(commandScope) {
         if (results.isEmpty()) {
-            messageAction(errorEmbed(noResultsMessage)).queue()
+            errorEmbed(noResultsMessage).queue()
             return null
         }
 
@@ -76,7 +76,7 @@ class SelectionMenuBuilder<E>(private val execution: CommandExecution) {
             } else if (args.matches("\\d+".toRegex())) {
                 val numSelection = args.toBigInteger().toInt()
                 if (numSelection < 1 || numSelection > results.size) {
-                    errorMessage.getAndSet(messageAction("Unknown Selection").sendCached())?.delete()
+                    errorMessage.getAndSet(errorEmbed("Unknown Selection").send().sendCached())?.delete()
                     return@responseListener CommandSession.ResponseAction.IGNORE_COMMAND
                 }
                 val selectedMember = results[numSelection - 1]
@@ -84,7 +84,7 @@ class SelectionMenuBuilder<E>(private val execution: CommandExecution) {
                 CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER
             } else {
                 if (event.message.contentRaw == args) {
-                    errorMessage.getAndSet(messageAction("Response must be a number!").sendCached())?.delete()
+                    errorMessage.getAndSet(errorEmbed("Response must be a number!").send().sendCached())?.delete()
                     return@responseListener CommandSession.ResponseAction.IGNORE_COMMAND
                 } else CommandSession.ResponseAction.RUN_COMMAND
             }
@@ -109,41 +109,40 @@ class SelectionMenuBuilder<E>(private val execution: CommandExecution) {
     }
 }
 
-fun CommandExecution.chatInput(inputMessage: String) = ChatInputBuilder(this)
+fun CommandScope.chatInput(inputMessage: String) = ChatInputBuilder(this)
         .description(inputMessage)
 
-class ChatInputBuilder(private val execution: CommandExecution) {
+class ChatInputBuilder(private val execution: CommandScope) {
     private var title: String = ""
     private var description: String = "Input = Output"
-    private var responseValidator: (String) -> Boolean = { true }
+    private var responseValidator: suspend (String) -> Boolean = { true }
 
     fun title(value: String) = apply { title = value }
     fun description(value: String) = apply { description = value }
-    fun responseValidator(value: (String) -> Boolean) = apply { responseValidator = value }
+    fun responseValidator(value: suspend (String) -> Boolean) = apply { responseValidator = value }
 
     suspend fun execute(): String? = with(execution) {
-        val response = CompletableDeferred<String?>()
-        val message = messageAction(embed {
+        val message = embed {
             if (title.isNotBlank()) title(title)
             description(description)
-        }).sendCached()
+        }.send().sendCached()
         // Waits for a follow up response for user selection
-        responseListener {
-            if (message.isDeleted) {
-                CommandSession.ResponseAction.UNREGISTER_LISTENER
-            } else {
-                val result = responseValidator.invoke(args)
-                if (result) {
-                    // If the validator says its valid
-                    response.complete(args)
-                    CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER
+        return suspendCancellableCoroutine { cont ->
+            responseListener {
+                if (message.isDeleted) {
+                    CommandSession.ResponseAction.UNREGISTER_LISTENER
                 } else {
-                    CommandSession.ResponseAction.IGNORE_COMMAND
+                    val result = responseValidator.invoke(args)
+                    if (result) {
+                        // If the validator says its valid
+                        cont.resume(args)
+                        CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER
+                    } else {
+                        CommandSession.ResponseAction.IGNORE_COMMAND
+                    }
                 }
             }
+            cont.invokeOnCancellation { message.delete() }
         }
-        destroyListener { response.complete(null) }
-        response.invokeOnCompletion { message.delete() }
-        return response.await()
     }
 }

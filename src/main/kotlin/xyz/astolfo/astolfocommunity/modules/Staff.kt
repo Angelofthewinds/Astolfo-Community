@@ -11,15 +11,15 @@ fun createStaffModule() = module("Developer", hidden = true) {
     command("dev") {
         inheritedAction {
             if (!application.staffMemberIds.contains(event.author.idLong)) {
-                messageAction(errorEmbed("You're not allowed to use developer commands, please contact a staff member if you want to use them!")).queue()
+                errorEmbed("You're not allowed to use developer commands, please contact a staff member if you want to use them!").queue()
                 false
             } else true
         }
         action {
-            messageAction(embed {
+            embed {
                 description("addRadio [url] [name] - Adds a radio to the database\n" +
                         "removeRadio [id] - Removes a radio from the database")
-            }).queue()
+            }.queue()
         }
         command("stop") {
             action {
@@ -40,21 +40,21 @@ fun createStaffModule() = module("Developer", hidden = true) {
                 try {
                     URL(urlString)
                 } catch (e: MalformedURLException) {
-                    messageAction(errorEmbed("That's not a valid url!")).queue()
+                    errorEmbed("That's not a valid url!").queue()
                     return@action
                 }
                 if (name.isBlank()) {
-                    messageAction(errorEmbed("Please give the radio station a name!")).queue()
+                    errorEmbed("Please give the radio station a name!").queue()
                     return@action
                 }
                 val radioEntry = application.astolfoRepositories.radioRepository.save(RadioEntry(name = name, url = urlString))
-                messageAction(embed("Radio station #${radioEntry.id!!} **${radioEntry.name}** has been added!")).queue()
+                embed("Radio station #${radioEntry.id!!} **${radioEntry.name}** has been added!").queue()
             }
         }
         command("removeRadio") {
             action {
                 application.astolfoRepositories.radioRepository.deleteById(args.toLong())
-                messageAction(embed("Deleted!")).queue()
+                embed("Deleted!").queue()
             }
         }
         command("patreon") {
@@ -71,13 +71,13 @@ fun createStaffModule() = module("Developer", hidden = true) {
             command("give") {
                 action {
                     application.donationManager.give(event.member.user.idLong)
-                    messageAction(embed("Done!")).queue()
+                    embed("Done!").queue()
                 }
             }
             command("take") {
                 action {
                     application.donationManager.remove(event.member.user.idLong)
-                    messageAction(embed("Done!")).queue()
+                    embed("Done!").queue()
                 }
             }
         }

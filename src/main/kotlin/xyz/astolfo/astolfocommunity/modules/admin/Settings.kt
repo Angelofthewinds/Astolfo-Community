@@ -4,14 +4,15 @@ import net.dv8tion.jda.core.Permission
 import org.apache.commons.lang3.StringUtils
 import xyz.astolfo.astolfocommunity.GuildSettings
 import xyz.astolfo.astolfocommunity.commands.CommandBuilder
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.commands.withGuildSettings
+import xyz.astolfo.astolfocommunity.lib.smartParseBoolean
 import xyz.astolfo.astolfocommunity.menus.textChannelSelectionBuilder
 import xyz.astolfo.astolfocommunity.messages.color
 import xyz.astolfo.astolfocommunity.messages.description
 import xyz.astolfo.astolfocommunity.messages.field
 import xyz.astolfo.astolfocommunity.messages.title
 import xyz.astolfo.astolfocommunity.modules.ModuleBuilder
-import xyz.astolfo.astolfocommunity.smartParseBoolean
 import xyz.astolfo.astolfocommunity.support.SupportLevel
 import java.awt.Color
 
@@ -29,7 +30,7 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
                 true
             }
             .setMessage { data ->
-                messageAction(embed("Prefix successfully changed to **${data.getEffectiveGuildPrefix(application)}**")).queue()
+                embed("Prefix successfully changed to **${data.getEffectiveGuildPrefix(application)}**").queue()
             }
             .build()
 
@@ -53,10 +54,10 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
                 val currentList = data.blacklistedChannels.toMutableList()
                 if (currentList.contains(textChannelId)) {
                     currentList.remove(textChannelId)
-                    messageAction(embed("Channel **${textChannel.name}** has been removed from the blacklist")).queue()
+                    embed("Channel **${textChannel.name}** has been removed from the blacklist").queue()
                 } else {
                     currentList.add(textChannelId)
-                    messageAction(embed("Channel **${textChannel.name}** has been added to the blacklist")).queue()
+                    embed("Channel **${textChannel.name}** has been added to the blacklist").queue()
                 }
                 data.blacklistedChannels = currentList
                 true
@@ -71,15 +72,15 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
             .set { data, newState ->
                 val state = newState.smartParseBoolean()
                 if (state == null) {
-                    messageAction(errorEmbed("State must be **on/off** but got **$newState**")).queue()
+                    errorEmbed("State must be **on/off** but got **$newState**").queue()
                     return@set false
                 }
                 data.announceSongs = state
                 true
             }
             .setMessage { data ->
-                if (data.announceSongs) messageAction(embed("Songs will now be announced when playing")).queue()
-                else messageAction(embed("Songs will no longer be announced when playing")).queue()
+                if (data.announceSongs) embed("Songs will now be announced when playing").queue()
+                else embed("Songs will no longer be announced when playing").queue()
 
             }
             .build()
@@ -99,15 +100,15 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
                 }
                 val limitNum = newState.toBigIntegerOrNull()?.toLong()
                 if (limitNum == null) {
-                    messageAction(errorEmbed("New limit must be a whole number or disabled!")).queue()
+                    errorEmbed("New limit must be a whole number or disabled!").queue()
                     return@set false
                 }
                 data.maxUserSongs = if (limitNum <= 0) -1L else limitNum
                 true
             }
             .setMessage { data ->
-                if (data.maxUserSongs <= 0) messageAction(embed("The max user song limit has been removed.")).queue()
-                else messageAction(embed("The max user song limit has been set to **${data.maxUserSongs}** songs.")).queue()
+                if (data.maxUserSongs <= 0) embed("The max user song limit has been removed.").queue()
+                else embed("The max user song limit has been set to **${data.maxUserSongs}** songs.").queue()
             }
             .build()
 
@@ -120,15 +121,15 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
             .set { data, newState ->
                 val state = newState.smartParseBoolean()
                 if (state == null) {
-                    messageAction(errorEmbed("State must be **on/off** but got **$newState**")).queue()
+                    errorEmbed("State must be **on/off** but got **$newState**").queue()
                     return@set false
                 }
                 data.dupSongPrevention = state
                 true
             }
             .setMessage { data ->
-                if (data.dupSongPrevention) messageAction(embed("Duplicate songs will automatically be prevented")).queue()
-                else messageAction(embed("Duplicate song prevention is now turned off")).queue()
+                if (data.dupSongPrevention) embed("Duplicate songs will automatically be prevented").queue()
+                else embed("Duplicate song prevention is now turned off").queue()
             }
             .build()
 
@@ -146,37 +147,37 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
                 }
                 val level = newState.toBigIntegerOrNull()?.toInt()
                 if (level == null) {
-                    messageAction(errorEmbed("State must be a whole number or default but got **$newState**")).queue()
+                    errorEmbed("State must be a whole number or default but got **$newState**").queue()
                     return@set false
                 }
                 val donationEntry = application.donationManager.getByMember(event.member.guild.owner)
                 val supportLevel = SupportLevel.SUPPORTER
                 if (donationEntry.ordinal < supportLevel.ordinal) {
-                    messageAction(embed {
+                    embed {
                         description("\uD83D\uDD12 Due to performance reasons default volume changing is locked!" +
                                 " You can unlock this feature by asking the owner of your server to become a [patreon.com/theprimedtnt](https://www.patreon.com/theprimedtnt)" +
                                 " and getting at least the **${supportLevel.rewardName}** Tier.")
                         color(Color.RED)
-                    }).queue()
+                    }.queue()
                     return@set false
                 }
                 data.defaultMusicVolume = level
                 true
             }
-            .setMessage { data -> messageAction(embed("Default music volume is now set to **${data.defaultMusicVolume}%**.")).queue() }
+            .setMessage { data -> embed("Default music volume is now set to **${data.defaultMusicVolume}%**.").queue() }
             .build()
 
     val settings = listOf(prefixSetting, blacklistChannelSetting, announceSetting, maxUserSongs, dupSongPreventionSetting, defaultMusicVolumeSetting)
 
     action {
-        val guildPrefix = getGuildSettings().getEffectiveGuildPrefix(application)
-        messageAction(embed {
+        val guildPrefix = guildSettings.getEffectiveGuildPrefix(application)
+        embed {
             title("Astolfo Settings")
             description("Type **${guildPrefix}settings <name>** to get more information about the setting.")
             for (setting in settings) {
                 field(setting.name, setting.command, true)
             }
-        }).queue()
+        }.queue()
     }
 
     for (setting in settings) {
@@ -188,9 +189,9 @@ private fun <T> CommandBuilder.settingCommand(setting: Setting<T>) {
     command(setting.command) {
         action {
             if (args.isEmpty()) {
-                val guildSettings = getGuildSettings()
+                val guildSettings = this.guildSettings
                 val guildPrefix = guildSettings.getEffectiveGuildPrefix(application)
-                messageAction(embed {
+                embed {
                     title("Astolfo Settings - ${setting.name}")
                     description(setting.about)
                     val default = setting.default(this@action)
@@ -201,7 +202,7 @@ private fun <T> CommandBuilder.settingCommand(setting: Setting<T>) {
                     field("Usage", "**${guildPrefix}settings ${setting.command} ${setting.usage}**", false)
                     field("Current", currentAsString, true)
                     field("Default", defaultAsString, true)
-                }).queue()
+                }.queue()
             } else {
                 withGuildSettings { data ->
                     if (setting.set(this@action, data, args)) setting.setMessage(this@action, data)
@@ -217,32 +218,32 @@ private class Setting<T>(val command: String,
                          val name: String,
                          val about: String,
                          val usage: String,
-                         val default: CommandExecution.() -> T,
-                         val toString: CommandExecution.(T) -> String,
-                         val setMessage: CommandExecution.(GuildSettings) -> Unit,
-                         val set: suspend CommandExecution.(GuildSettings, String) -> Boolean,
-                         val get: CommandExecution.(GuildSettings) -> T?)
+                         val default: CommandScope.() -> T,
+                         val toString: CommandScope.(T) -> String,
+                         val setMessage: suspend CommandScope.(GuildSettings) -> Unit,
+                         val set: suspend CommandScope.(GuildSettings, String) -> Boolean,
+                         val get: CommandScope.(GuildSettings) -> T?)
 
 private class SettingsBuilder<T>(val name: String) {
     private var command = name.toLowerCase().replace(" ", "_")
     private var about = "No description set"
     private var usage = "No specified usage"
-    private lateinit var default: CommandExecution.() -> T
-    private var set: suspend CommandExecution.(GuildSettings, String) -> Boolean = { _, _ -> false }
-    private lateinit var get: CommandExecution.(GuildSettings) -> T?
-    private var setMessage: CommandExecution.(GuildSettings) -> Unit = {
-        messageAction(embed("Setting successfully set!")).queue()
+    private lateinit var default: CommandScope.() -> T
+    private var set: suspend CommandScope.(GuildSettings, String) -> Boolean = { _, _ -> false }
+    private lateinit var get: CommandScope.(GuildSettings) -> T?
+    private var setMessage: suspend CommandScope.(GuildSettings) -> Unit = {
+        embed("Setting successfully set!").queue()
     }
-    private var toString: CommandExecution.(T) -> String = { obj -> obj.toString() }
+    private var toString: CommandScope.(T) -> String = { obj -> obj.toString() }
 
     fun command(value: String) = also { command = value }
     fun about(value: String) = also { about = value }
-    fun default(value: CommandExecution.() -> T) = also { default = value }
-    fun set(value: suspend CommandExecution.(GuildSettings, String) -> Boolean) = also { set = value }
-    fun get(value: CommandExecution.(GuildSettings) -> T?) = also { get = value }
+    fun default(value: CommandScope.() -> T) = also { default = value }
+    fun set(value: suspend CommandScope.(GuildSettings, String) -> Boolean) = also { set = value }
+    fun get(value: CommandScope.(GuildSettings) -> T?) = also { get = value }
     fun usage(value: String) = also { usage = value }
-    fun setMessage(value: CommandExecution.(GuildSettings) -> Unit) = also { setMessage = value }
-    fun toString(value: CommandExecution.(T) -> String) = also { toString = value }
+    fun setMessage(value: suspend CommandScope.(GuildSettings) -> Unit) = also { setMessage = value }
+    fun toString(value: CommandScope.(T) -> String) = also { toString = value }
 
     fun build() = Setting(command, name, about, usage, default, toString, setMessage, set, get)
 }

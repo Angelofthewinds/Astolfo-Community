@@ -1,10 +1,11 @@
 package xyz.astolfo.astolfocommunity.commands
 
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
 import io.sentry.Sentry
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.experimental.newFixedThreadPoolContext
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import java.util.concurrent.TimeUnit
 
@@ -13,15 +14,18 @@ class ChannelListener(
         val guildListener: GuildListener
 ) {
 
-    private val cleanUpJob = launch(MessageListener.messageProcessorContext) {
-        while (isActive && !destroyed) {
-            // Clean up every 5 minutes
-            delay(5, TimeUnit.MINUTES)
-            channelActor.send(CleanUp)
-        }
+    companion object {
+        private val processorContext = newFixedThreadPoolContext(10, "Channel Message Processor")
     }
 
     private var destroyed = false
+
+    private val listenerCacheMap = CacheBuilder.newBuilder()
+            .expireAfterAccess(10, TimeUnit.MINUTES)
+            .removalListener<Long, SessionListener> { it.value.dispose() }
+            .build(object : CacheLoader<Long, SessionListener>() {
+                override fun load(guildId: Long): SessionListener = SessionListener(application, this@ChannelListener)
+            })
 
     suspend fun addMessage(guildMessageData: GuildListener.GuildMessageData) = channelActor.send(MessageEvent(guildMessageData))
     suspend fun addCommand(guildMessageData: GuildListener.GuildMessageData) = channelActor.send(CommandEvent(guildMessageData))
@@ -29,9 +33,8 @@ class ChannelListener(
     private interface ChannelEvent
     private class CommandEvent(val guildMessageData: GuildListener.GuildMessageData) : ChannelEvent
     private class MessageEvent(val guildMessageData: GuildListener.GuildMessageData) : ChannelEvent
-    private object CleanUp : ChannelEvent
 
-    private val channelActor = actor<ChannelEvent>(context = MessageListener.messageProcessorContext, capacity = Channel.UNLIMITED) {
+    private val channelActor = actor<ChannelEvent>(context = processorContext, capacity = Channel.UNLIMITED) {
         for (event in channel) {
             if (destroyed) continue
             try {
@@ -41,57 +44,32 @@ class ChannelListener(
                 Sentry.capture(e)
             }
         }
-        sessionListeners.forEach { it.value.listener.dispose() }
+        listenerCacheMap.invalidateAll()
     }
-
-    private val sessionListeners = mutableMapOf<Long, CacheEntry>()
 
     private suspend fun handleEvent(event: ChannelEvent) {
         when (event) {
-            is CleanUp -> {
-                val currentTime = System.currentTimeMillis()
-                val expiredListeners = mutableListOf<Long>()
-                for ((key, value) in sessionListeners) {
-                    val deltaTime = currentTime - value.lastUsed
-                    // Remove if its older then 10 minutes
-                    if (deltaTime > TimeUnit.MINUTES.toSeconds(10)) {
-                        value.listener.dispose()
-                        //println("REMOVE SESSIONLISTENER: ${guild.idLong}/${channel.idLong}/$key")
-                        expiredListeners.add(key)
-                    }
-                }
-                expiredListeners.forEach { sessionListeners.remove(it) }
-            }
             is MessageEvent -> {
                 // forward to session listener
                 val guildMessageData = event.guildMessageData
                 val user = guildMessageData.messageReceivedEvent.author!!
-                val sessionEntry = sessionListeners[user.idLong] ?: return // Ignore if session is invalid
-                sessionEntry.lastUsed = System.currentTimeMillis()
-                sessionEntry.listener.addMessage(guildMessageData)
+                // Ignore if session is invalid
+                listenerCacheMap.getIfPresent(user.idLong)
+                        ?.addMessage(guildMessageData)
             }
             is CommandEvent -> {
                 // forward to and create session listener
                 val guildMessageData = event.guildMessageData
                 val member = guildMessageData.messageReceivedEvent.member!!
 
-                val entry = sessionListeners.computeIfAbsent(member.user.idLong) {
-                    // Create session listener if it doesn't exist
-                    //println("CREATE SESSIONLISTENER: ${guild.idLong}/${channel.idLong}/${member.user.idLong}")
-                    CacheEntry(SessionListener(application, this), System.currentTimeMillis())
-                }
-                entry.lastUsed = System.currentTimeMillis()
-                entry.listener.addCommand(guildMessageData)
+                listenerCacheMap.get(member.user.idLong).addCommand(guildMessageData)
             }
         }
     }
 
     fun dispose() {
         destroyed = true
-        cleanUpJob.cancel()
         channelActor.close()
     }
-
-    private class CacheEntry(val listener: SessionListener, var lastUsed: Long)
 
 }

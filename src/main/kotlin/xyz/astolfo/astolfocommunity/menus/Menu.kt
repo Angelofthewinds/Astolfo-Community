@@ -3,16 +3,16 @@ package xyz.astolfo.astolfocommunity.menus
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
 import xyz.astolfo.astolfocommunity.commands.CommandSession
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.value
 import xyz.astolfo.astolfocommunity.messages.*
-import xyz.astolfo.astolfocommunity.value
 import kotlin.math.max
 import kotlin.math.min
 
 
-fun CommandExecution.paginator(titleProvider: String? = "", builder: PaginatorBuilder.() -> Unit) = paginator({ titleProvider }, builder)
-fun CommandExecution.paginator(titleProvider: () -> String? = { null }, builder: PaginatorBuilder.() -> Unit): Paginator {
+fun CommandScope.paginator(titleProvider: String? = "", builder: PaginatorBuilder.() -> Unit) = paginator({ titleProvider }, builder)
+fun CommandScope.paginator(titleProvider: () -> String? = { null }, builder: PaginatorBuilder.() -> Unit): Paginator {
     val paginatorBuilder = PaginatorBuilder(this, titleProvider, PaginatorProvider(0) { listOf() }) {
         message {
             embed {
@@ -37,7 +37,7 @@ fun PaginatorBuilder.renderer(renderer: Paginator.() -> Message) {
     this.renderer = renderer
 }
 
-class PaginatorBuilder(private val commandExecution: CommandExecution, var titleProvider: () -> String?, var provider: PaginatorProvider, var renderer: Paginator.() -> Message) {
+class PaginatorBuilder(private val commandExecution: CommandScope, var titleProvider: () -> String?, var provider: PaginatorProvider, var renderer: Paginator.() -> Message) {
     fun build() = Paginator(commandExecution, titleProvider, provider, renderer)
 }
 
@@ -57,7 +57,7 @@ class PaginatorProvider(val perPage: Int,
         private set
 }
 
-class Paginator(private val commandExecution: CommandExecution, val titleProvider: () -> String?, val provider: PaginatorProvider, val renderer: Paginator.() -> Message) {
+class Paginator(private val commandExecution: CommandScope, val titleProvider: () -> String?, val provider: PaginatorProvider, val renderer: Paginator.() -> Message) {
     var currentPage = 0
         set(value) {
             val oldPage = field
@@ -141,7 +141,7 @@ class Paginator(private val commandExecution: CommandExecution, val titleProvide
         if (isDestroyed) return
         val newMessage = renderer.invoke(this@Paginator)
         if (message == null) {
-            message = commandExecution.messageAction(newMessage).sendCached()
+            message = commandExecution.run { newMessage.send() }.sendCached()
 
             val pageCount = provider.pageCount
             val emotes = mutableListOf<String>()

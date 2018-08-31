@@ -30,17 +30,17 @@ import net.dv8tion.jda.core.events.ReadyEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import org.apache.commons.io.FileUtils
-import xyz.astolfo.astolfocommunity.ASTOLFO_GSON
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.AstolfoProperties
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
+import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.synchronized2
 import xyz.astolfo.astolfocommunity.menus.selectionBuilder
 import xyz.astolfo.astolfocommunity.messages.description
 import xyz.astolfo.astolfocommunity.messages.embed
 import xyz.astolfo.astolfocommunity.messages.errorEmbed
 import xyz.astolfo.astolfocommunity.messages.sendCached
 import xyz.astolfo.astolfocommunity.support.SupportLevel
-import xyz.astolfo.astolfocommunity.synchronized2
 import java.io.File
 import java.net.MalformedURLException
 import java.net.URI
@@ -728,7 +728,7 @@ class AudioData(var requesterId: Long = 0)
 fun Lavalink.connect(voiceChannel: VoiceChannel) = getLink(voiceChannel.guild).connect(voiceChannel)
 fun Lavalink.getPlayer(guild: Guild) = getLink(guild).player!!
 
-fun CommandExecution.selectMusic(results: List<AudioTrack>) = selectionBuilder<AudioTrack>()
+fun CommandScope.selectMusic(results: List<AudioTrack>) = selectionBuilder<AudioTrack>()
         .title("\uD83D\uDD0E Music Search Results:")
         .results(results)
         .noResultsMessage("Unknown Song!")

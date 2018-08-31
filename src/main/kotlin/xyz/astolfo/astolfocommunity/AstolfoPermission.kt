@@ -4,6 +4,7 @@ import net.dv8tion.jda.core.Permission
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.Role
 import net.dv8tion.jda.core.entities.TextChannel
+import xyz.astolfo.astolfocommunity.lib.splitLast
 
 class AstolfoPermission(path: String, vararg val permissionDefaults: Permission) {
     val path = path.toLowerCase()

@@ -7,10 +7,11 @@ import kotlinx.coroutines.experimental.Job
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.newFixedThreadPoolContext
 import org.jsoup.parser.Parser
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
+import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.web
 import java.util.*
 import java.util.concurrent.TimeUnit
-
 
 object ResourceManager {
 
@@ -22,7 +23,7 @@ object ResourceManager {
 
     private val random = Random()
 
-    suspend fun CommandExecution.getImage(tag: String, explicit: Boolean): ResolvedImageObject? {
+    suspend fun CommandScope.getImage(tag: String, explicit: Boolean): ResolvedImageObject? {
         val completableDeferred = CompletableDeferred<ResolvedImageObject>()
         val mainJob = Job()
         ResourceType.values().forEach { type ->

@@ -8,11 +8,13 @@ import net.dv8tion.jda.core.Permission
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.AstolfoPermissionUtils
-import xyz.astolfo.astolfocommunity.hasPermission
+import xyz.astolfo.astolfocommunity.lib.commands.CommandDataImpl
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.hasPermission
+import xyz.astolfo.astolfocommunity.lib.splitFirst
 import xyz.astolfo.astolfocommunity.messages.errorEmbed
 import xyz.astolfo.astolfocommunity.modules.Module
-import xyz.astolfo.astolfocommunity.modules.modules
-import xyz.astolfo.astolfocommunity.splitFirst
+import xyz.astolfo.astolfocommunity.modules.ModuleManager
 import java.util.concurrent.TimeUnit
 
 class SessionListener(
@@ -21,19 +23,20 @@ class SessionListener(
 ) {
 
     companion object {
-        internal val sessionContext = newFixedThreadPoolContext(50, "Session Processor")
-        internal val commandContext = newFixedThreadPoolContext(100, "Command Processor")
+        internal val sessionContext = newFixedThreadPoolContext(10, "Session Processor")
+        internal val commandContext = newFixedThreadPoolContext(20, "Command Processor")
     }
 
     private var destroyed = false
 
-    suspend fun addMessage(guildMessageData: GuildListener.GuildMessageData) = sessionActor.send(MessageEvent(guildMessageData))
-    suspend fun addCommand(guildMessageData: GuildListener.GuildMessageData) = sessionActor.send(CommandEvent(guildMessageData))
+    suspend fun addMessage(guildMessageData: GuildListener.GuildMessageData) = sessionActor.send(SessionEvent.MessageEvent(guildMessageData))
+    suspend fun addCommand(guildMessageData: GuildListener.GuildMessageData) = sessionActor.send(SessionEvent.CommandEvent(guildMessageData))
 
-    private interface SessionEvent
-    private class MessageEvent(val guildMessageData: GuildListener.GuildMessageData) : SessionEvent
-    private class CommandEvent(val guildMessageData: GuildListener.GuildMessageData) : SessionEvent
-    private object CleanUp : SessionEvent
+    private sealed class SessionEvent {
+        class MessageEvent(val guildMessageData: GuildListener.GuildMessageData) : SessionEvent()
+        class CommandEvent(val guildMessageData: GuildListener.GuildMessageData) : SessionEvent()
+        object CleanUp : SessionEvent()
+    }
 
     private val sessionActor = actor<SessionEvent>(context = sessionContext, capacity = Channel.UNLIMITED) {
         for (event in channel) {
@@ -45,7 +48,7 @@ class SessionListener(
                 Sentry.capture(e)
             }
         }
-        handleEvent(CleanUp)
+        handleEvent(SessionEvent.CleanUp)
     }
 
     private var currentSession: CommandSession? = null
@@ -53,25 +56,33 @@ class SessionListener(
 
     private suspend fun handleEvent(event: SessionEvent) {
         when (event) {
-            is CleanUp -> {
+            is SessionEvent.CleanUp -> {
                 currentSession?.destroy()
                 sessionJob?.cancelAndJoin()
                 currentSession = null
                 sessionJob = null
             }
-            is MessageEvent -> {
+            is SessionEvent.MessageEvent -> {
                 val currentSession = this.currentSession ?: return
                 // TODO add rate limit
                 //if (!processRateLimit(event)) return@launch
                 val guildMessageData = event.guildMessageData
                 val jdaEvent = guildMessageData.messageReceivedEvent
-                val execution = CommandExecution(application, jdaEvent, currentSession, currentSession.commandPath, jdaEvent.message.contentRaw, guildMessageData.timeIssued)
-                if (currentSession.onMessageReceived(execution) == CommandSession.ResponseAction.RUN_COMMAND) {
-                    // If the response listeners return true or all the response listeners removed themselves
-                    handleEvent(CleanUp)
+                withContext(CommandDataImpl(
+                        jdaEvent,
+                        currentSession,
+                        currentSession.commandPath,
+                        jdaEvent.message.contentRaw,
+                        guildMessageData.timeIssued
+                )) {
+                    val commandScope = CommandScope(application)
+                    if (currentSession.onMessageReceived(commandScope) == CommandSession.ResponseAction.RUN_COMMAND) {
+                        // If the response listeners return true or all the response listeners removed themselves
+                        handleEvent(SessionEvent.CleanUp)
+                    }
                 }
             }
-            is CommandEvent -> {
+            is SessionEvent.CommandEvent -> {
                 val guildMessageData = event.guildMessageData
                 val jdaEvent = guildMessageData.messageReceivedEvent
                 val member = jdaEvent.member
@@ -135,19 +146,11 @@ class SessionListener(
                     return
                 }
 
-                fun createExecution(session: CommandSession, commandPath: String, commandContent: String) = CommandExecution(
-                        application,
-                        jdaEvent,
-                        session,
-                        commandPath,
-                        commandContent,
-                        guildMessageData.timeIssued
-                )
-
                 val module = commandNodes.first
 
-                val moduleExecution = createExecution(InheritedCommandSession(commandMessage), "", commandMessage)
-                if (!module.inheritedActions.all { it.invoke(moduleExecution) }) return
+                if (guildMessageData.withCommandScope(InheritedCommandSession(commandMessage), "", commandMessage) { scope ->
+                            !module.inheritedActions.all { it.invoke(scope) }
+                        }) return
 
                 // Go through all the nodes in the command path and check permissions/actions
                 for ((command, commandPath, commandContent) in commandNodes.second) {
@@ -170,20 +173,22 @@ class SessionListener(
                     }
 
                     // INHERITED ACTIONS
-                    val inheritedExecution = createExecution(InheritedCommandSession(commandPath), commandPath, commandContent)
-                    if (!command.inheritedActions.all { it.invoke(inheritedExecution) }) return
+                    if (guildMessageData.withCommandScope(InheritedCommandSession(commandPath), commandPath, commandContent) { scope ->
+                                !command.inheritedActions.all { it.invoke(scope) }
+                            }) return
                 }
                 // COMMAND ENDPOINT
                 val (command, commandPath, commandContent) = commandNodes.second.last()
 
                 suspend fun runNewSession() {
-                    handleEvent(CleanUp)
+                    handleEvent(SessionEvent.CleanUp)
                     application.statsDClient.incrementCounter("commandExecuteCount", "command:$commandPath")
                     currentSession = CommandSessionImpl(commandPath)
-                    val execution = createExecution(currentSession!!, commandPath, commandContent)
                     sessionJob = launch(commandContext) {
-                        withTimeout(1, TimeUnit.MINUTES) {
-                            command.action(execution)
+                        guildMessageData.withCommandScope(currentSession!!, commandPath, commandContent) { scope ->
+                            withTimeout(1, TimeUnit.MINUTES) {
+                                command.varient.action(scope)
+                            }
                         }
                     }
                 }
@@ -192,7 +197,9 @@ class SessionListener(
 
                 // Checks if command is the same as the previous, if so, check if its a follow up response
                 if (currentSession != null && currentSession.commandPath.equals(commandPath, true)) {
-                    val action = currentSession.onMessageReceived(createExecution(currentSession, commandPath, commandContent))
+                    val action = guildMessageData.withCommandScope(currentSession, commandPath, commandContent) {
+                        currentSession.onMessageReceived(it)
+                    }
                     when (action) {
                         CommandSession.ResponseAction.RUN_COMMAND -> {
                             runNewSession()
@@ -207,6 +214,18 @@ class SessionListener(
             }
         }
     }
+
+    private suspend fun <T> GuildListener.GuildMessageData.withCommandScope(session: CommandSession, commandPath: String, commandContent: String, block: suspend (CommandScope) -> T): T =
+            withContext(CommandDataImpl(
+                    messageReceivedEvent,
+                    session,
+                    commandPath,
+                    commandContent,
+                    timeIssued
+            )) {
+                val commandScope = CommandScope(application)
+                block(commandScope)
+            }
 
     private fun checkPatreonBot(data: GuildListener.GuildMessageData): Boolean {
         if (!application.properties.patreon_bot) return true
@@ -236,7 +255,8 @@ class SessionListener(
     }
 
     private fun resolvePath(commandMessage: String): Pair<Module, List<PathNode>>? {
-        for (module in modules) return module to (resolvePath(module.commands, "", commandMessage) ?: continue)
+        for (module in ModuleManager.modules) return module to (resolvePath(module.commands, "", commandMessage)
+                ?: continue)
         return null
     }
 
@@ -245,7 +265,7 @@ class SessionListener(
 
         val command = commands.findByName(commandName) ?: return null
 
-        val newCommandPath = "$commandPath ${command.name}".trim()
+        val newCommandPath = "$commandPath ${command.varient.name}".trim()
         val commandNode = PathNode(command, newCommandPath, commandContent)
 
         if (commandContent.isBlank()) return listOf(commandNode)

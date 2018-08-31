@@ -9,11 +9,11 @@ import kotlinx.coroutines.experimental.sync.Mutex
 import kotlinx.coroutines.experimental.sync.withLock
 import org.jsoup.Jsoup
 import xyz.astolfo.astolfocommunity.games.*
+import xyz.astolfo.astolfocommunity.lib.web
+import xyz.astolfo.astolfocommunity.lib.webJson
+import xyz.astolfo.astolfocommunity.lib.words
 import xyz.astolfo.astolfocommunity.menus.memberSelectionBuilder
 import xyz.astolfo.astolfocommunity.messages.*
-import xyz.astolfo.astolfocommunity.web
-import xyz.astolfo.astolfocommunity.webJson
-import xyz.astolfo.astolfocommunity.words
 import java.math.BigInteger
 import java.util.*
 import kotlin.coroutines.experimental.suspendCoroutine
@@ -21,23 +21,23 @@ import kotlin.coroutines.experimental.suspendCoroutine
 fun createFunModule() = module("Fun") {
     command("osu") {
         action {
-            messageAction(embed {
+            embed {
                 val osuPicture = "https://upload.wikimedia.org/wikipedia/commons/d/d3/Osu%21Logo_%282015%29.png"
                 title("Astolfo Osu Integration")
                 description("**sig**  -  generates an osu signature of the user" +
                         "\n**profile**  -  gets user data from the osu api")
                 thumbnail(osuPicture)
-            }).queue()
+            }.queue()
         }
         command("sig", "s") {
             action {
                 val osuUsername = args
-                messageAction(embed {
+                embed {
                     val url = "http://lemmmy.pw/osusig/sig.php?colour=purple&uname=$osuUsername&pp=1"
                     title("Astolfo Osu Signature", url)
                     description("$osuUsername\'s Osu Signature!")
                     image(url)
-                }).queue()
+                }.queue()
             }
         }
         command("profile", "p", "user", "stats") {
@@ -46,11 +46,11 @@ fun createFunModule() = module("Fun") {
                 val user = try {
                     osu.users.query(EndpointUsers.ArgumentsBuilder(args).build())
                 } catch (e: Exception) {
-                    messageAction(errorEmbed(":mag: I looked for `$args`, but couldn't find them!" +
-                            "\n Try using the sig command instead.")).queue()
+                    errorEmbed(":mag: I looked for `$args`, but couldn't find them!" +
+                            "\n Try using the sig command instead.").queue()
                     return@action
                 }
-                messageAction(embed {
+                embed {
                     val topPlayBeatmap = user.getTopScores(1).get().first().beatmap.get()
                     title("Osu stats for ${user.username}", user.url.toString())
                     description("\nProfile url: ${user.url}" +
@@ -59,13 +59,13 @@ fun createFunModule() = module("Fun") {
                             "\nAccuracy: **${user.accuracy}%**" +
                             "\nPlay Count: **${user.playCount} (Lv${user.level})**" +
                             "\nTop play: **$topPlayBeatmap** ${topPlayBeatmap.url}")
-                }).queue()
+                }.queue()
             }
         }
     }
     command("advice") {
         action {
-            messageAction(embed("\uD83D\uDCD6 ${webJson<Advice>("http://api.adviceslip.com/advice").await().slip!!.advice}")).queue()
+            embed("\uD83D\uDCD6 ${webJson<Advice>("http://api.adviceslip.com/advice").await().slip!!.advice}").queue()
         }
     }
     command("cat", "cats") {
@@ -77,7 +77,7 @@ fun createFunModule() = module("Fun") {
                 val newCat = webJson<Cat>("http://aws.random.cat/meow", null).await().file!!
                 catMutex.withLock {
                     if (!validCats.contains(newCat)) validCats.add(newCat)
-                    if(validCats.size > 500) validCats.removeAt(0) // max of 500 cats in memory
+                    if (validCats.size > 500) validCats.removeAt(0) // max of 500 cats in memory
                 }
                 newCat
             } catch (e: Throwable) {
@@ -87,18 +87,18 @@ fun createFunModule() = module("Fun") {
                     validCats.let { it[random.nextInt(it.size)] }
                 }
             }
-            messageAction(message(cat)).queue()
+            message(cat).queue()
         }
     }
     command("catgirl", "neko", "catgirls") {
         action {
-            messageAction(message(webJson<Neko>("https://nekos.life/api/neko").await().neko!!)).queue()
+            message(webJson<Neko>("https://nekos.life/api/neko").await().neko!!).queue()
         }
     }
     command("coinflip", "flip", "coin") {
         val random = Random()
         action {
-            val flipMessage = messageAction(embed("Flipping a coin for you...")).sendCached()
+            val flipMessage = embed("Flipping a coin for you...").send().sendCached()
             flipMessage.editMessage(embed("Coin landed on **${if (random.nextBoolean()) "Heads" else "Tails"}**"), 1L)
         }
     }
@@ -118,13 +118,13 @@ fun createFunModule() = module("Fun") {
                 }
                 2 -> parts[0].toBigIntegerOrNull() to parts[1].toBigIntegerOrNull()
                 else -> {
-                    messageAction(errorEmbed("Invalid roll format! Accepted Formats: *<max>*, *<min> <max>*")).queue()
+                    errorEmbed("Invalid roll format! Accepted Formats: *<max>*, *<min> <max>*").queue()
                     return@action
                 }
             }
 
             if (bound1 == null || bound2 == null) {
-                messageAction(errorEmbed("Only whole numbers are allowed for bounds!")).queue()
+                errorEmbed("Only whole numbers are allowed for bounds!").queue()
                 return@action
             }
 
@@ -140,7 +140,7 @@ fun createFunModule() = module("Fun") {
 
             randomNum += lowerBound
 
-            val rollingMessage = messageAction(embed(":game_die: Rolling a dice for you...")).sendCached()
+            val rollingMessage = embed(":game_die: Rolling a dice for you...").send().sendCached()
             rollingMessage.editMessage(embed("Dice landed on **$randomNum**"), 1)
         }
     }
@@ -150,21 +150,21 @@ fun createFunModule() = module("Fun") {
         action {
             val question = args
             if (question.isBlank()) {
-                messageAction(embed(":exclamation: Make sure to ask a question next time. :)")).queue()
+                embed(":exclamation: Make sure to ask a question next time. :)").queue()
                 return@action
             }
-            messageAction(embed {
+            embed {
                 title(":8ball: 8 Ball")
                 field("Question", question, false)
                 field("Answer", responses[random.nextInt(responses.size)], false)
-            }).queue()
+            }.queue()
         }
     }
     command("csshumor", "cssjoke", "cssh") {
         action {
-            messageAction(embed("```css" +
+            embed("```css" +
                     "\n${Jsoup.parse(web("https://csshumor.com/").await()).select(".crayon-code").text()}" +
-                    "\n```")).queue()
+                    "\n```").queue()
         }
     }
     command("cyanideandhappiness", "cnh") {
@@ -175,48 +175,48 @@ fun createFunModule() = module("Fun") {
                     .select("#main-comic").first()
                     .attr("src")
                     .let { if (it.startsWith("//")) "https:$it" else it }
-            messageAction(embed {
+            embed {
                 title("Cyanide and Happiness")
                 image(imageUrl)
-            }).queue()
+            }.queue()
         }
     }
     command("dadjoke", "djoke", "dadjokes", "djokes") {
         action {
-            messageAction(embed("\uD83D\uDCD6 **Dadjoke:** ${webJson<DadJoke>("https://icanhazdadjoke.com/").await().joke!!}")).queue()
+            embed("\uD83D\uDCD6 **Dadjoke:** ${webJson<DadJoke>("https://icanhazdadjoke.com/").await().joke!!}").queue()
         }
     }
     command("hug") {
         action {
             val selectedMember = memberSelectionBuilder(args).title("Hug Selection").execute() ?: return@action
             val image = application.weeb4J.imageProvider.getRandomImage("hug", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
-            messageAction(embed {
+            embed {
                 description("${event.author.asMention} has hugged ${selectedMember.asMention}")
                 image(image.url)
                 footer("Powered by weeb.sh")
-            }).queue()
+            }.queue()
         }
     }
     command("kiss") {
         action {
             val selectedMember = memberSelectionBuilder(args).title("Kiss Selection").execute() ?: return@action
             val image = application.weeb4J.imageProvider.getRandomImage("kiss", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
-            messageAction(embed {
+            embed {
                 description("${event.author.asMention} has kissed ${selectedMember.asMention}")
                 image(image.url)
                 footer("Powered by weeb.sh")
-            }).queue()
+            }.queue()
         }
     }
     command("slap") {
         action {
             val selectedMember = memberSelectionBuilder(args).title("Slap Selection").execute() ?: return@action
             val image = application.weeb4J.imageProvider.getRandomImage("slap", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
-            messageAction(embed {
+            embed {
                 description("${event.author.asMention} has slapped ${selectedMember.asMention}")
                 image(image.url)
                 footer("Powered by weeb.sh")
-            }).queue()
+            }.queue()
         }
     }
     command("game") {
@@ -225,55 +225,55 @@ fun createFunModule() = module("Fun") {
             if (currentGame != null) {
                 if (args.equals("stop", true)) {
                     currentGame.endGame()
-                    messageAction(embed("Current game has stopped!")).queue()
+                    embed("Current game has stopped!").queue()
                 } else {
-                    messageAction(errorEmbed("To stop the current game you're in, type `?game stop`")).queue()
+                    errorEmbed("To stop the current game you're in, type `?game stop`").queue()
                 }
                 false
             } else true
         }
         action {
-            messageAction(embed {
+            embed {
                 title("Astolfo Game Help")
                 description("**snake**  -  starts a game of snake!\n" +
                         "**tetris** - starts a game of tetris!\n" +
                         "**shiritori [easy/normal/hard/impossible]** - starts a game of shiritori!\n\n" +
                         "**stop** - stops the current game your playing")
-            }).queue()
+            }.queue()
         }
         command("snake") {
             action {
-                messageAction(embed("Starting the game of snake...")).queue()
+                embed("Starting the game of snake...").queue()
                 GameHandler.start(event.channel.idLong, event.author.idLong, SnakeGame(event.member, event.channel))
             }
         }
         command("tetris") {
             action {
-                messageAction(embed("Starting the game of tetris...")).queue()
+                embed("Starting the game of tetris...").queue()
                 GameHandler.start(event.channel.idLong, event.author.idLong, TetrisGame(event.member, event.channel))
             }
         }
         command("akinator") {
             action {
-                messageAction(embed("Starting the akinator...")).queue()
+                embed("Starting the akinator...").queue()
                 GameHandler.start(event.channel.idLong, event.author.idLong, AkinatorGame(event.member, event.channel))
             }
         }
         command("shiritori") {
             action {
                 if (GameHandler.getAll(event.channel.idLong).any { it is ShiritoriGame }) {
-                    messageAction(errorEmbed("Only one game of Shiritori is allowed per channel!")).queue()
+                    errorEmbed("Only one game of Shiritori is allowed per channel!").queue()
                     return@action
                 }
                 val difficulty = args.takeIf { it.isNotBlank() }?.let { string ->
                     val choosen = ShiritoriGame.Difficulty.values().find { string.equals(it.name, true) }
                     if (choosen == null) {
-                        messageAction(errorEmbed("Unknown difficulty! Valid difficulties: **Easy**, **Normal**, **Hard**, **Impossible**")).queue()
+                        errorEmbed("Unknown difficulty! Valid difficulties: **Easy**, **Normal**, **Hard**, **Impossible**").queue()
                         return@action
                     }
                     choosen
                 } ?: ShiritoriGame.Difficulty.NORMAL
-                messageAction(embed("Starting the game of Shiritori with difficulty **${difficulty.name.toLowerCase().capitalize()}**...")).queue()
+                embed("Starting the game of Shiritori with difficulty **${difficulty.name.toLowerCase().capitalize()}**...").queue()
                 GameHandler.start(event.channel.idLong, event.author.idLong, ShiritoriGame(event.member, event.channel, difficulty))
             }
         }

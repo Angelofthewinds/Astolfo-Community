@@ -5,9 +5,10 @@ import net.dv8tion.jda.core.entities.Role
 import net.dv8tion.jda.core.entities.TextChannel
 import xyz.astolfo.astolfocommunity.PermissionSetting
 import xyz.astolfo.astolfocommunity.commands.ArgsIterator
-import xyz.astolfo.astolfocommunity.commands.CommandExecution
 import xyz.astolfo.astolfocommunity.commands.argsIterator
 import xyz.astolfo.astolfocommunity.commands.next
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.commands.withGuildSettings
 import xyz.astolfo.astolfocommunity.menus.*
 import xyz.astolfo.astolfocommunity.modules.ModuleBuilder
 
@@ -20,7 +21,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
         lateinit var permission: String
     }
 
-    suspend fun CommandExecution.parseScope(args: ArgsIterator, data: PermissionData, includePermission: Boolean): Boolean {
+    suspend fun CommandScope.parseScope(args: ArgsIterator, data: PermissionData, includePermission: Boolean): Boolean {
         val scopeQuery = args.next("")
         val scope = selectionBuilder<String>()
                 .results(listOf("guild", "channel").filter { it.contains(scopeQuery, ignoreCase = true) })
@@ -51,7 +52,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
                 withPermissions { permissions ->
                     permissions[PermissionSetting(role.idLong, channel?.idLong ?: 0, permission)] = true
                 }
-                messageAction(embed("You have granted the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope")).queue()
+                embed("You have granted the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope").queue()
             }
         }
     }
@@ -66,7 +67,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
                 withPermissions { permissions ->
                     permissions[PermissionSetting(role.idLong, channel?.idLong ?: 0, permission)] = false
                 }
-                messageAction(embed("You have denied the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope")).queue()
+                embed("You have denied the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope").queue()
             }
         }
     }
@@ -81,7 +82,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
                 withPermissions { permissions ->
                     permissions.remove(PermissionSetting(role.idLong, channel?.idLong ?: 0, permission))
                 }
-                messageAction(embed("You have defaulted the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope")).queue()
+                embed("You have defaulted the permission **$permission** to the role **${role.name.let { if (it.startsWith("@")) it.substring(1) else it }}** under the ${if (channel == null) "guild" else "channel ${channel.asMention}"} scope").queue()
             }
         }
     }
@@ -94,7 +95,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
             basicAction {
                 val (role, channel) = Pair(it.role, it.textChannel)
 
-                val permissions = getGuildSettings().permissions.filter {
+                val permissions = guildSettings.permissions.filter {
                     @Suppress("CascadeIf")
                     if (it.key.role != role.idLong) false
                     else if (channel != null) it.key.channel == channel.idLong
@@ -113,7 +114,7 @@ internal fun ModuleBuilder.permissionCommand() = command("permissions") {
     }
 }
 
-private suspend inline fun <E> CommandExecution.withPermissions(block: (MutableMap<PermissionSetting, Boolean>) -> E): E = withGuildSettings {
+private suspend inline fun <E> CommandScope.withPermissions(crossinline block: (MutableMap<PermissionSetting, Boolean>) -> E): E = withGuildSettings {
     val permissions = it.permissions.toMutableMap()
     val result = block.invoke(permissions)
     it.permissions = permissions

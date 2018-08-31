@@ -1,15 +1,15 @@
 package xyz.astolfo.astolfocommunity.modules
 
 import xyz.astolfo.astolfocommunity.ResourceManager.getImage
+import xyz.astolfo.astolfocommunity.lib.webJson
 import xyz.astolfo.astolfocommunity.messages.image
 import xyz.astolfo.astolfocommunity.messages.title
-import xyz.astolfo.astolfocommunity.webJson
 import java.util.*
 
 fun createNSFWModule() = module("NSFW", nsfw = true) {
     inheritedAction {
         if (!event.channel.isNSFW) {
-            messageAction(errorEmbed("The NSFW module is only allowed in NSFW enabled channels!")).queue()
+            errorEmbed("The NSFW module is only allowed in NSFW enabled channels!").queue()
             return@inheritedAction false
         }
         return@inheritedAction true
@@ -19,13 +19,13 @@ fun createNSFWModule() = module("NSFW", nsfw = true) {
         action {
             val data = webJson<List<BoobData>>("http://api.oboobs.ru/boobs/${random.nextInt(10330) + 1}").await().firstOrNull()
             if (data == null) {
-                messageAction(errorEmbed("Couldn't find any boobs! Please try again later.")).queue()
+                errorEmbed("Couldn't find any boobs! Please try again later.").queue()
                 return@action
             }
-            messageAction(embed {
+            embed {
                 title("Astolfo NSFW")
                 image(data.url)
-            }).queue()
+            }.queue()
         }
     }
     command("butt", "butts") {
@@ -33,26 +33,26 @@ fun createNSFWModule() = module("NSFW", nsfw = true) {
         action {
             val data = webJson<List<ButtData>>("http://api.obutts.ru/butts/${random.nextInt(4335) + 1}").await().firstOrNull()
             if (data == null) {
-                messageAction(errorEmbed("Couldn't find any butts! Please try again later.")).queue()
+                errorEmbed("Couldn't find any butts! Please try again later.").queue()
                 return@action
             }
-            messageAction(embed {
+            embed {
                 title("Astolfo NSFW")
                 image(data.url)
-            }).queue()
+            }.queue()
         }
     }
     command("hentai", "nsfw") {
         action {
             val image = getImage(args, true)
             if (image == null) {
-                messageAction(errorEmbed("Couldn't find any hentai! Please try again later.")).queue()
+                errorEmbed("Couldn't find any hentai! Please try again later.").queue()
                 return@action
             }
-            messageAction(embed {
+            embed {
                 title("Astolfo NSFW")
                 image(image.fileUrl)
-            }).queue()
+            }.queue()
         }
     }
 }

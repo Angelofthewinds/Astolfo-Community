@@ -12,6 +12,7 @@ import net.dv8tion.jda.core.OnlineStatus
 import net.dv8tion.jda.core.entities.Game
 import net.dv8tion.jda.core.events.guild.GuildJoinEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
+import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -23,6 +24,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.web.servlet.HandlerExceptionResolver
 import xyz.astolfo.astolfocommunity.commands.MessageListener
 import xyz.astolfo.astolfocommunity.messages.MessageCache
+import xyz.astolfo.astolfocommunity.modules.ModuleManager
 import xyz.astolfo.astolfocommunity.modules.admin.JoinLeaveManager
 import xyz.astolfo.astolfocommunity.modules.music.MusicManager
 import xyz.astolfo.astolfocommunity.support.DonationManager
@@ -47,6 +49,7 @@ class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
 
     init {
         if (properties.sentry_dsn.isNotBlank()) Sentry.init(properties.sentry_dsn)
+        ModuleManager.registerModules()
 
         val statsListener = StatsListener(this)
         val shardManagerBuilder = DefaultShardManagerBuilder()
@@ -119,6 +122,10 @@ class StatsListener(val application: AstolfoCommunityApplication) : ListenerAdap
                 delay(1, TimeUnit.MINUTES)
             }
         }
+    }
+
+    override fun onGuildMessageReceived(event: GuildMessageReceivedEvent?) {
+        application.statsDClient.incrementCounter("messages_received")
     }
 
     override fun onGuildJoin(event: GuildJoinEvent?) {

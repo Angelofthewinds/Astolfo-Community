@@ -17,11 +17,11 @@ import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageDeleteEvent
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
-import xyz.astolfo.astolfocommunity.hasPermission
+import xyz.astolfo.astolfocommunity.lib.hasPermission
 import xyz.astolfo.astolfocommunity.messages.CachedMessage
 import xyz.astolfo.astolfocommunity.messages.message
 import xyz.astolfo.astolfocommunity.messages.sendCached
-import xyz.astolfo.astolfocommunity.value
+import xyz.astolfo.astolfocommunity.lib.value
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 

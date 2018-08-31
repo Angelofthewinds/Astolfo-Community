@@ -5,7 +5,9 @@ import net.dv8tion.jda.core.MessageBuilder
 import net.dv8tion.jda.core.Permission
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.MessageEmbed
+import xyz.astolfo.astolfocommunity.lib.commands.requestedBy
 import java.awt.Color
+import kotlin.coroutines.experimental.coroutineContext
 
 fun embed(text: String) = embed0(text)
 inline fun embed(crossinline builder: EmbedBuilder.() -> Unit) = embed0(builder)
@@ -42,6 +44,7 @@ fun EmbedBuilder.footer(text: String, icon: String? = null) = setFooter(text, ic
 
 // Helpers
 fun errorEmbed(text: String) = errorEmbed0(text)
+
 inline fun errorEmbed(crossinline builder: EmbedBuilder.() -> Unit) = errorEmbed0(builder)
 
 fun errorEmbed0(text: String) = errorEmbed0 { description(text) }
@@ -51,3 +54,24 @@ inline fun errorEmbed0(crossinline builder: EmbedBuilder.() -> Unit) = embed {
 }
 
 fun Message.hasPermission(vararg permissions: Permission): Boolean = guild.selfMember.hasPermission(textChannel, *permissions)
+
+// New Suspending functions
+
+typealias SuspendingEmbedBuilderBlock = suspend EmbedBuilder.() -> Unit
+
+suspend fun errorEmbedSuspend(text: String) = errorEmbedSuspend { description(text) }
+suspend inline fun errorEmbedSuspend(crossinline builder: SuspendingEmbedBuilderBlock) = embedSuspend {
+    color(Color.RED)
+    builder(this)
+}
+
+suspend fun embedSuspend(text: String) = embedSuspend { description(text) }
+suspend inline fun embedSuspend(crossinline builder: SuspendingEmbedBuilderBlock) = embedSuspend0(builder)
+
+suspend inline fun embedSuspend0(crossinline builder: SuspendingEmbedBuilderBlock): MessageEmbed =
+        EmbedBuilder().setColor(Color(64, 156, 217)).also {
+            coroutineContext.requestedBy?.let { author ->
+                it.footer("Requested by ${author.name}")
+            }
+            builder(it)
+        }.build()

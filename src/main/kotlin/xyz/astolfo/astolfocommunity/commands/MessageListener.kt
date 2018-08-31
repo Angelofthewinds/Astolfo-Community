@@ -1,95 +1,55 @@
 package xyz.astolfo.astolfocommunity.commands
 
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
 import io.sentry.Sentry
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.channels.sendBlocking
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import kotlinx.coroutines.experimental.withTimeout
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
-import net.dv8tion.jda.core.hooks.ListenerAdapter
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
-import xyz.astolfo.astolfocommunity.RateLimiter
+import xyz.astolfo.astolfocommunity.lib.RateLimiter
+import xyz.astolfo.astolfocommunity.lib.jda.builders.eventListenerBuilder
 import java.util.concurrent.TimeUnit
 
 class MessageListener(val application: AstolfoCommunityApplication) {
 
     companion object {
-        internal val messageProcessorContext = newFixedThreadPoolContext(50, "Message Processor")
+        private val processorContext = newFixedThreadPoolContext(2, "Message Processor")
     }
 
-    val listener = object : ListenerAdapter() {
-        override fun onGuildMessageReceived(event: GuildMessageReceivedEvent) {
-            application.statsDClient.incrementCounter("messages_received")
-            val timeIssued = System.nanoTime()
-            if (event.author.isBot || event.isWebhookMessage || !event.channel.canTalk()) return
-            messageActor.sendBlocking(GuildMessageReceived(MessageData(event, timeIssued)))
-        }
-    }
-
-    init {
-        launch(messageProcessorContext) {
-            while (isActive) {
-                // Clean up every 5 minutes
-                delay(5, TimeUnit.MINUTES)
-                messageActor.send(CleanUp)
-            }
+    val listener = eventListenerBuilder<GuildMessageReceivedEvent>(processorContext) {
+        if (!event.author.isBot && !event.isWebhookMessage && event.channel.canTalk()) {
+            messageActor.send(MessageData(event, timeIssued))
         }
     }
 
     internal val commandRateLimiter = RateLimiter<Long>(4, 6)
     internal val chatBotManager = ChatBotManager(application.properties)
 
+    private val listenerCacheMap = CacheBuilder.newBuilder()
+            .expireAfterAccess(10, TimeUnit.MINUTES)
+            .removalListener<Long, GuildListener> { it.value.dispose() }
+            .build(object : CacheLoader<Long, GuildListener>() {
+                override fun load(guildId: Long): GuildListener = GuildListener(application, this@MessageListener)
+            })
+
     open class MessageData(val messageReceivedEvent: GuildMessageReceivedEvent, val timeIssued: Long)
 
-    private interface MessageEvent
-    private class GuildMessageReceived(val messageData: MessageData) : MessageEvent
-    private object CleanUp : MessageEvent
-
-    private val messageActor = actor<MessageEvent>(context = messageProcessorContext, capacity = Channel.UNLIMITED) {
-        for (event in channel) {
+    private val messageActor = actor<MessageData>(context = processorContext, capacity = Channel.UNLIMITED) {
+        for (messageData in channel) {
             try {
-                handleEvent(event)
-            }catch (e: Throwable){
+                withTimeout(15, TimeUnit.SECONDS) {
+                    val guildId = messageData.messageReceivedEvent.guild.idLong
+                    val listener = listenerCacheMap[guildId]!!
+                    listener.addMessage(messageData)
+                }
+            } catch (e: Throwable) {
                 e.printStackTrace()
                 Sentry.capture(e)
             }
         }
     }
-
-    private val guildListeners = mutableMapOf<Long, CacheEntry>()
-
-    private suspend fun handleEvent(event: MessageEvent) {
-        when (event) {
-            is CleanUp -> {
-                val currentTime = System.currentTimeMillis()
-                val expiredListeners = mutableListOf<Long>()
-                for ((key, value) in guildListeners) {
-                    val deltaTime = currentTime - value.lastUsed
-                    // Remove if its older then 10 minutes
-                    if (deltaTime > TimeUnit.MINUTES.toSeconds(10)) {
-                        value.listener.dispose()
-                        //println("REMOVE GUILDLISTENER: $key")
-                        expiredListeners.add(key)
-                    }
-                }
-                expiredListeners.forEach { guildListeners.remove(it) }
-            }
-            is GuildMessageReceived -> {
-                val messageData = event.messageData
-                val guildId = messageData.messageReceivedEvent.guild.idLong
-                val entry = guildListeners.computeIfAbsent(guildId) {
-                    // Create if it doesn't exist
-                    //println("CREATE GUILDLISTENER: $guildId")
-                    CacheEntry(GuildListener(application, this), System.currentTimeMillis())
-                }
-                entry.lastUsed = System.currentTimeMillis()
-                entry.listener.addMessage(messageData)
-            }
-        }
-    }
-
-    private class CacheEntry(val listener: GuildListener, var lastUsed: Long)
 
 }

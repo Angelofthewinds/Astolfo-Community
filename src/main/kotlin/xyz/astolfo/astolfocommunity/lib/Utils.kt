@@ -1,4 +1,4 @@
-package xyz.astolfo.astolfocommunity
+package xyz.astolfo.astolfocommunity.lib
 
 import com.github.salomonbrys.kotson.fromJson
 import com.google.gson.Gson
@@ -132,7 +132,8 @@ object Utils {
 
     fun parseTimeString(input: String): Long? {
         val inputNoSpaces = input.replace(Regex("\\s+"), "")
-        return parse(TIMESTAMP_PATTERN, inputNoSpaces) ?: parse(WORD_PATTERN, inputNoSpaces)
+        return parse(TIMESTAMP_PATTERN, inputNoSpaces)
+                ?: parse(WORD_PATTERN, inputNoSpaces)
     }
 
     private fun parse(pattern: Regex, input: String): Long? {

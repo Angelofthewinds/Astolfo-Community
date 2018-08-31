@@ -11,7 +11,7 @@ import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
-import xyz.astolfo.astolfocommunity.levenshteinDistance
+import xyz.astolfo.astolfocommunity.lib.levenshteinDistance
 import xyz.astolfo.astolfocommunity.messages.*
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
