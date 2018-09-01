@@ -1,16 +1,12 @@
 package xyz.astolfo.astolfocommunity.games
 
-import kotlinx.coroutines.experimental.Job
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.channels.sendBlocking
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.newFixedThreadPoolContext
 import net.dv8tion.jda.core.EmbedBuilder
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
+import xyz.astolfo.astolfocommunity.lib.smartActor
 import xyz.astolfo.astolfocommunity.messages.description
 import xyz.astolfo.astolfocommunity.messages.embed
 import xyz.astolfo.astolfocommunity.messages.title
@@ -18,19 +14,15 @@ import java.awt.Point
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, channel, listOf(LEFT_EMOTE, UP_EMOTE, DOWN_EMOTE, RIGHT_EMOTE)) {
+class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, channel, SnakeDirection.values().map { it.emote }) {
 
     companion object {
-        private val snakeContext = newFixedThreadPoolContext(30, "Snake")
+        private val snakeContext = newFixedThreadPoolContext(10, "Snake")
 
         const val MAP_SIZE = 10
+        val MAP_RANGE = 0 until MAP_SIZE
         const val UPDATE_SPEED = 2L
         private val random = Random()
-
-        const val UP_EMOTE = "\uD83D\uDD3C"
-        const val DOWN_EMOTE = "\uD83D\uDD3D"
-        const val LEFT_EMOTE = "\u2B05"
-        const val RIGHT_EMOTE = "\u27A1"
     }
 
     private var appleLocation = randomPoint()
@@ -40,69 +32,60 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
     private lateinit var updateJob: Job
 
     override suspend fun onGenericMessageReaction(event: GenericMessageReactionEvent) {
-        val newDirection = when (event.reactionEmote.name) {
-            UP_EMOTE -> SnakeDirection.UP
-            DOWN_EMOTE -> SnakeDirection.DOWN
-            LEFT_EMOTE -> SnakeDirection.LEFT
-            RIGHT_EMOTE -> SnakeDirection.RIGHT
-            else -> return // Ignore new direction if not valid emote
-        }
-        snakeActor.send(DirectionEvent(newDirection))
+        val emoteName = event.reactionEmote.name
+        val newDirection = SnakeDirection.values().find { it.emote == emoteName } ?: return
+        snakeActor.send(SnakeEvent.DirectionEvent(newDirection))
     }
 
-    enum class SnakeDirection {
-        UP, DOWN, LEFT, RIGHT
+    enum class SnakeDirection(val xa: Int, val ya: Int, val emote: String) {
+        LEFT(-1, 0, "\u2B05"),
+        UP(0, -1, "\uD83D\uDD3C"),
+        DOWN(0, 1, "\uD83D\uDD3D"),
+        RIGHT(1, 0, "\u27A1")
     }
 
-    private interface SnakeEvent
-    private object StartEvent : SnakeEvent
-    private object DestroyEvent : SnakeEvent
-    private object UpdateEvent : SnakeEvent
-    private class DirectionEvent(val newDirection: SnakeDirection) : SnakeEvent
+    private sealed class SnakeEvent {
+        object UpdateEvent : SnakeEvent()
+        class DirectionEvent(val newDirection: SnakeDirection) : SnakeEvent()
+    }
 
-    private val snakeActor = actor<SnakeEvent>(context = snakeContext, capacity = Channel.UNLIMITED) {
-        for(event in this.channel){
-            if(destroyed) continue
+    private val snakeActor = smartActor<SnakeEvent>(snakeContext, Channel.UNLIMITED, CoroutineStart.LAZY) {
+        for (event in this.channel) {
+            if (destroyed) continue
             handleEvent(event)
         }
+    }
 
-        handleEvent(DestroyEvent)
+    override suspend fun start() {
+        super.start()
+
+        var startLocation = randomPoint()
+        while (startLocation == appleLocation) startLocation = randomPoint()
+        snake.add(startLocation)
+
+        updateJob = launch(snakeContext) {
+            while (isActive && running) {
+                snakeActor.send(SnakeEvent.UpdateEvent)
+                delay(UPDATE_SPEED, TimeUnit.SECONDS)
+            }
+        }
     }
 
     private suspend fun handleEvent(event: SnakeEvent) {
-        when(event) {
-            is StartEvent ->{
-                var startLocation = randomPoint()
-                while (startLocation == appleLocation) startLocation = randomPoint()
-                snake.add(startLocation)
-
-                updateJob = launch(snakeContext) {
-                    while (isActive && running) {
-                        snakeActor.send(UpdateEvent)
-                        delay(UPDATE_SPEED, TimeUnit.SECONDS)
-                    }
-                }
-            }
-            is DirectionEvent ->{
+        when (event) {
+            is SnakeEvent.DirectionEvent -> {
                 snakeDirection = event.newDirection
             }
-            is UpdateEvent -> {
+            is SnakeEvent.UpdateEvent -> {
                 if (currentMessage != null) {
-                    val frontSnake = snake.first()
-
-                    val newPoint = when (snakeDirection) {
-                        SnakeDirection.UP -> Point(frontSnake.x, frontSnake.y - 1)
-                        SnakeDirection.DOWN -> Point(frontSnake.x, frontSnake.y + 1)
-                        SnakeDirection.LEFT -> Point(frontSnake.x - 1, frontSnake.y)
-                        SnakeDirection.RIGHT -> Point(frontSnake.x + 1, frontSnake.y)
-                    }
+                    val newPoint = snake.first().let { Point(it.x + snakeDirection.xa, it.y + snakeDirection.ya) }
 
                     snake.add(0, newPoint)
 
-                    if (snake.any { it.x < 0 || it.x >= MAP_SIZE || it.y < 0 || it.y >= MAP_SIZE }) {
+                    if (snake.any { it.x !in MAP_RANGE || it.y !in MAP_RANGE }) {
                         snake.removeAt(0)
                         setContent(embed { render("Oof your snake went outside its cage!") })
-                        endGame()
+                        safeEndGame()
                         return
                     }
 
@@ -116,22 +99,14 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
 
                     if (snake.map { c1 -> snake.filter { c1 == it }.count() }.any { it > 1 }) {
                         setContent(embed { render("Oof you ran into yourself!") })
-                        endGame()
+                        safeEndGame()
                         return
                     }
                 }
 
                 setContent(embed { render() })
             }
-            is DestroyEvent -> {
-                updateJob.cancel()
-            }
         }
-    }
-
-    override suspend fun start() {
-        super.start()
-        snakeActor.send(StartEvent)
     }
 
     private fun randomPoint() = Point(random.nextInt(MAP_SIZE), random.nextInt(MAP_SIZE))
@@ -164,7 +139,8 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
 
     override suspend fun destroy() {
         super.destroy()
-        snakeActor.close()
+        updateJob.cancel()
+        snakeActor.closeAndJoin()
     }
 
 }

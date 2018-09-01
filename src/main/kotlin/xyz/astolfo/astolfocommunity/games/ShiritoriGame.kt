@@ -1,20 +1,16 @@
 package xyz.astolfo.astolfocommunity.games
 
-import kotlinx.coroutines.experimental.Job
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.channels.sendBlocking
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.newFixedThreadPoolContext
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.entities.User
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
-import net.dv8tion.jda.core.hooks.ListenerAdapter
 import org.springframework.core.io.ClassPathResource
+import xyz.astolfo.astolfocommunity.lib.jda.builders.eventListenerBuilder
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
+import xyz.astolfo.astolfocommunity.lib.smartActor
 import xyz.astolfo.astolfocommunity.messages.description
 import xyz.astolfo.astolfocommunity.messages.embed
 import xyz.astolfo.astolfocommunity.messages.field
@@ -29,7 +25,7 @@ import kotlin.streams.toList
 class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty: Difficulty) : Game(member, channel) {
 
     companion object {
-        private val shiritoriContext = newFixedThreadPoolContext(30, "Shiritori")
+        private val shiritoriContext = newFixedThreadPoolContext(10, "Shiritori")
 
         private val words: List<String>
         private val random = Random()
@@ -73,55 +69,28 @@ class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty
             get() = member.effectiveName
     }
 
-    private val jdaListener = object : ListenerAdapter() {
-        override fun onMessageReceived(event: MessageReceivedEvent) {
-            if (event.author.idLong != member.user.idLong || event.channel.idLong != channel.idLong) return
+    private val jdaListener = eventListenerBuilder<MessageReceivedEvent>(shiritoriContext) {
+        if (event.author.idLong != member.user.idLong || event.channel.idLong != channel.idLong) return@eventListenerBuilder
 
-            shiritoriActor.sendBlocking(MessageEvent(event.author, event.message.contentRaw))
-        }
+        shiritoriActor.send(ShiritoriEvent.MessageEvent(event.author, event.message.contentRaw))
     }
 
-    private interface ShiritoriEvent
-    private object StartEvent : ShiritoriEvent
-    private class MessageEvent(val author: User, val message: String) : ShiritoriEvent
-    private class MoveEvent(val move: String) : ShiritoriEvent
-    private object WinEvent : ShiritoriEvent
-    private object DestroyEvent : ShiritoriEvent
+    private sealed class ShiritoriEvent {
+        class MessageEvent(val author: User, val message: String) : ShiritoriEvent()
+        class MoveEvent(val move: String) : ShiritoriEvent()
+        object WinEvent : ShiritoriEvent()
+    }
 
-    private val shiritoriActor = actor<ShiritoriEvent>(context = shiritoriContext, capacity = Channel.UNLIMITED) {
+    private val shiritoriActor = smartActor<ShiritoriEvent>(shiritoriContext, Channel.UNLIMITED, CoroutineStart.LAZY) {
         for (event in this.channel) {
             if (destroyed) continue
             handleEvent(event)
         }
-        // Dispose messages
-        handleEvent(DestroyEvent)
     }
 
     private suspend fun handleEvent(event: ShiritoriEvent) {
         when (event) {
-            is StartEvent -> {
-                infoMessage = channel.sendMessage(embed {
-                    title("Astolfo Shiritori")
-                    description("When the game *starts* you are given a **random letter**. You must pick a word *beginning* with that *letter*." +
-                            "After you pick your word, the bot will pick another word starting with the **last part** of your *word*." +
-                            "Then you will play against the bot till your **score reaches zero**, starting at *100*." +
-                            "First one to **zero points wins**!" +
-                            "\n" +
-                            "\n__**Words must:**__" +
-                            "\n- Be in the *dictionary*" +
-                            "\n- Have at least ***4*** *letters*" +
-                            "\n- Have *not* been *used*" +
-                            "\n" +
-                            "\n__**Points:**__" +
-                            "\n- *Length Bonus:* Number of letters *minus four*" +
-                            "\n- *Speed Bonus:* **15 seconds** minus time it took")
-                }).sendCached()
-                scoreboardMessage = channel.sendMessage("You may go first, can be any word that is 4 letters or longer and starting with the letter **$startLetter**!").sendCached()
-                lastWordTime = System.currentTimeMillis()
-
-                channel.jda.addEventListener(jdaListener)
-            }
-            is MessageEvent -> {
+            is ShiritoriEvent.MessageEvent -> {
                 lastWarning?.delete()
                 lastWarning = null
 
@@ -153,9 +122,9 @@ class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty
                     return
                 }
 
-                handleEvent(MoveEvent(wordInput))
+                handleEvent(ShiritoriEvent.MoveEvent(wordInput))
             }
-            is MoveEvent -> {
+            is ShiritoriEvent.MoveEvent -> {
                 val wordInput = event.move
 
                 usedWords.add(wordInput)
@@ -169,7 +138,7 @@ class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty
 
                 val score = currentTurn.score
                 if (score <= 0) {
-                    handleEvent(WinEvent)
+                    handleEvent(ShiritoriEvent.WinEvent)
                     return
                 }
 
@@ -197,39 +166,59 @@ class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty
                         thinkingMessage?.delete()
                         thinkingMessage = null
                         channel.sendMessage(chosenWord).queue()
-                        shiritoriActor.send(MoveEvent(chosenWord))
+                        shiritoriActor.send(ShiritoriEvent.MoveEvent(chosenWord))
                     }
                 }
             }
-            is WinEvent -> {
+            is ShiritoriEvent.WinEvent -> {
                 channel.sendMessage(embed("${currentTurn.name} has won!")).queue()
-                endGame()
-            }
-            is DestroyEvent -> {
-                channel.jda.removeEventListener(jdaListener)
-                infoMessage?.delete()
-                lastWarning?.delete()
-                scoreboardMessage?.delete()
-                thinkingMessage?.delete()
-                computerDelay?.cancel()
-
-                thinkingMessage = null
-                scoreboardMessage = null
-                infoMessage = null
-                lastWarning = null
-                computerDelay = null
+                safeEndGame()
             }
         }
     }
 
     override suspend fun start() {
         super.start()
-        shiritoriActor.send(StartEvent)
+
+        infoMessage = channel.sendMessage(embed {
+            title("Astolfo Shiritori")
+            description("When the game *starts* you are given a **random letter**. You must pick a word *beginning* with that *letter*." +
+                    "After you pick your word, the bot will pick another word starting with the **last part** of your *word*." +
+                    "Then you will play against the bot till your **score reaches zero**, starting at *100*." +
+                    "First one to **zero points wins**!" +
+                    "\n" +
+                    "\n__**Words must:**__" +
+                    "\n- Be in the *dictionary*" +
+                    "\n- Have at least ***4*** *letters*" +
+                    "\n- Have *not* been *used*" +
+                    "\n" +
+                    "\n__**Points:**__" +
+                    "\n- *Length Bonus:* Number of letters *minus four*" +
+                    "\n- *Speed Bonus:* **15 seconds** minus time it took")
+        }).sendCached()
+        scoreboardMessage = channel.sendMessage("You may go first, can be any word that is 4 letters or longer and starting with the letter **$startLetter**!").sendCached()
+        lastWordTime = System.currentTimeMillis()
+
+        channel.jda.addEventListener(jdaListener)
     }
 
     override suspend fun destroy() {
         super.destroy()
-        shiritoriActor.close()
+        channel.jda.removeEventListener(jdaListener)
+
+        shiritoriActor.closeAndJoin()
+
+        infoMessage?.delete()
+        lastWarning?.delete()
+        scoreboardMessage?.delete()
+        thinkingMessage?.delete()
+        computerDelay?.cancel()
+
+        thinkingMessage = null
+        scoreboardMessage = null
+        infoMessage = null
+        lastWarning = null
+        computerDelay = null
     }
 
 }

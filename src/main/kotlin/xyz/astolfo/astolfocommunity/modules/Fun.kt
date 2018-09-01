@@ -9,6 +9,8 @@ import kotlinx.coroutines.experimental.sync.Mutex
 import kotlinx.coroutines.experimental.sync.withLock
 import org.jsoup.Jsoup
 import xyz.astolfo.astolfocommunity.games.*
+import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.commands.captureError
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.lib.web
 import xyz.astolfo.astolfocommunity.lib.webJson
@@ -222,10 +224,10 @@ fun createFunModule() = module("Fun") {
     }
     command("game") {
         inheritedAction {
-            val currentGame = GameHandler.get(event.channel.idLong, event.author.idLong)
-            if (currentGame != null) {
+            val currentGame = GameHandler[event.channel.idLong, event.author.idLong]
+            if (currentGame.game != null) {
                 if (args.equals("stop", true)) {
-                    currentGame.endGame()
+                    currentGame.stopGame()
                     embed("Current game has stopped!").queue()
                 } else {
                     errorEmbed("To stop the current game you're in, type `?game stop`").queue()
@@ -245,24 +247,24 @@ fun createFunModule() = module("Fun") {
         command("snake") {
             action {
                 embed("Starting the game of snake...").queue()
-                GameHandler.start(event.channel.idLong, event.author.idLong, SnakeGame(event.member, event.channel))
+                startGame(SnakeGame(event.member, event.channel))
             }
         }
         command("tetris") {
             action {
                 embed("Starting the game of tetris...").queue()
-                GameHandler.start(event.channel.idLong, event.author.idLong, TetrisGame(event.member, event.channel))
+                startGame(TetrisGame(event.member, event.channel))
             }
         }
         command("akinator") {
             action {
                 embed("Starting the akinator...").queue()
-                GameHandler.start(event.channel.idLong, event.author.idLong, AkinatorGame(event.member, event.channel))
+                startGame(AkinatorGame(event.member, event.channel))
             }
         }
         command("shiritori") {
             action {
-                if (GameHandler.getAll(event.channel.idLong).any { it is ShiritoriGame }) {
+                if (GameHandler.getAllInChannel(event.channel.idLong).any { it.game is ShiritoriGame }) {
                     errorEmbed("Only one game of Shiritori is allowed per channel!").queue()
                     return@action
                 }
@@ -275,10 +277,14 @@ fun createFunModule() = module("Fun") {
                     choosen
                 } ?: ShiritoriGame.Difficulty.NORMAL
                 embed("Starting the game of Shiritori with difficulty **${difficulty.name.toLowerCase().capitalize()}**...").queue()
-                GameHandler.start(event.channel.idLong, event.author.idLong, ShiritoriGame(event.member, event.channel, difficulty))
+                startGame(ShiritoriGame(event.member, event.channel, difficulty))
             }
         }
     }
+}
+
+private suspend fun CommandScope.startGame(game: Game) = captureError<IllegalStateException, Unit> {
+    GameHandler.startGame(event.channel.idLong, event.author.idLong, game)
 }
 
 class Advice(val slip: AdviceSlip?) {

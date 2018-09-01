@@ -6,11 +6,10 @@ import com.markozajc.akiwrapper.core.entities.Guess
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.channels.sendBlocking
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
-import net.dv8tion.jda.core.hooks.ListenerAdapter
+import xyz.astolfo.astolfocommunity.lib.jda.builders.eventListenerBuilder
 import xyz.astolfo.astolfocommunity.lib.levenshteinDistance
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
@@ -24,7 +23,7 @@ import kotlin.math.max
 class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel) {
 
     companion object {
-        private val akinatorContext = newFixedThreadPoolContext(30, "Akinator")
+        private val akinatorContext = newFixedThreadPoolContext(5, "Akinator")
 
         private val answerMap: Map<String, Answer>
         private val yesNoList = listOf(Answer.YES, Answer.NO)
@@ -54,12 +53,10 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
         UNDO(Akiwrapper.Answer.PROBABLY_NOT)
     }
 
-    private val jdaListener = object : ListenerAdapter() {
-        override fun onMessageReceived(event: MessageReceivedEvent) {
-            if (event.author.idLong != member.user.idLong || event.channel.idLong != channel.idLong) return
+    private val jdaListener = eventListenerBuilder<MessageReceivedEvent>(akinatorContext) {
+        if (event.author.idLong != member.user.idLong || event.channel.idLong != channel.idLong) return@eventListenerBuilder
 
-            ankinatorActor.sendBlocking(AkinatorEvent.MessageEvent(event.message.contentRaw))
-        }
+        ankinatorActor.send(AkinatorEvent.MessageEvent(event.message.contentRaw))
     }
 
     private lateinit var akiWrapper: Akiwrapper

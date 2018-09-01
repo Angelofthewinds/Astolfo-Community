@@ -1,12 +1,9 @@
 package xyz.astolfo.astolfocommunity.games
 
-import kotlinx.coroutines.experimental.CompletableDeferred
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
+import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
-import kotlinx.coroutines.experimental.channels.sendBlocking
-import kotlinx.coroutines.experimental.delay
-import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.newFixedThreadPoolContext
 import kotlinx.coroutines.experimental.sync.Mutex
 import kotlinx.coroutines.experimental.sync.withLock
 import net.dv8tion.jda.core.Permission
@@ -16,60 +13,59 @@ import net.dv8tion.jda.core.entities.MessageEmbed
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageDeleteEvent
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
+import xyz.astolfo.astolfocommunity.lib.ConflatedMessage
+import xyz.astolfo.astolfocommunity.lib.asConflated
 import xyz.astolfo.astolfocommunity.lib.hasPermission
 import xyz.astolfo.astolfocommunity.lib.jda.builders.listenerBuilder
-import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
+import xyz.astolfo.astolfocommunity.lib.smartActor
 import xyz.astolfo.astolfocommunity.messages.message
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 object GameHandler {
 
-    private val gameHandlerContext = newFixedThreadPoolContext(10, "Game Handler")
-    private val gameSessionMap = ConcurrentHashMap<GameSessionKey, Game>()
-    private val sessionMutex = Mutex()
+    private val gameSessionCache = CacheBuilder.newBuilder()
+            .expireAfterAccess(1, TimeUnit.HOURS)
+            //.removalListener<GameSessionKey, GameSession> { it.value.dispose() }
+            .build(object : CacheLoader<GameSessionKey, GameSession>() {
+                override fun load(key: GameSessionKey): GameSession = GameSession()
+            })
 
-    private interface GameEvent
-    private class StartGame(val sessionKey: GameSessionKey, val game: Game) : GameEvent
-    private class EndGame(val sessionKey: GameSessionKey) : GameEvent
+    private suspend fun startGame(sessionKey: GameSessionKey, game: Game) =
+            gameSessionCache[sessionKey]!!.also { it.startGame(game) }
 
-    private val gameActor = actor<GameEvent>(context = gameHandlerContext, capacity = Channel.UNLIMITED) {
-        for (event in channel) {
-            sessionMutex.withLock {
-                handleEvent(event)
-            }
-        }
+    private suspend fun stopGame(sessionKey: GameSessionKey) {
+        gameSessionCache.getIfPresent(sessionKey)?.stopGame()
     }
 
-    private suspend fun handleEvent(event: GameEvent) {
-        when (event) {
-            is StartGame -> {
-                // Incase somehow a game is still running
-                handleEvent(EndGame(event.sessionKey))
-                // Start the game
-                gameSessionMap[event.sessionKey] = event.game
-                event.game.start()
-            }
-            is EndGame -> {
-                gameSessionMap.remove(event.sessionKey)?.destroy()
-            }
-        }
-    }
+    operator fun get(channelId: Long, userId: Long): GameSession = gameSessionCache.get(GameSessionKey(channelId, userId))
 
-    suspend fun get(channelId: Long, userId: Long) = sessionMutex.withLock {
-        gameSessionMap[GameSessionKey(channelId, userId)]
-    }
+    fun getAllInChannel(channelId: Long): Collection<GameSession> = gameSessionCache.getAll(gameSessionCache.asMap().keys.filter { it.channelId == channelId }).values
 
-    suspend fun getAll(channelId: Long): List<Game> = sessionMutex.withLock {
-        gameSessionMap.values.filter { it.channel.idLong == channelId }
-    }
-
-    suspend fun end(channelId: Long, userId: Long) = gameActor.send(EndGame(GameSessionKey(channelId, userId)))
-
-    suspend fun start(channelId: Long, userId: Long, game: Game) = gameActor.send(StartGame(GameSessionKey(channelId, userId), game))
+    suspend fun stopGame(channelId: Long, userId: Long) = stopGame(GameSessionKey(channelId, userId))
+    suspend fun startGame(channelId: Long, userId: Long, game: Game) = startGame(GameSessionKey(channelId, userId), game)
 
     data class GameSessionKey(val channelId: Long, val userId: Long)
+
+}
+
+class GameSession {
+
+    private val sessionSync = Mutex()
+
+    var game: Game? = null
+
+    suspend fun startGame(game: Game) = sessionSync.withLock {
+        if (this.game != null) throw IllegalStateException("Cannot start new game since a game is already running!")
+        this.game = game
+        game.start()
+    }
+
+    suspend fun stopGame() = sessionSync.withLock {
+        val game = this.game ?: return
+        this.game = null
+        game.destroy()
+    }
 
 }
 
@@ -89,91 +85,41 @@ abstract class Game(val member: Member, val channel: TextChannel) {
         destroyed = true
     }
 
-    suspend fun endGame() = GameHandler.end(channel.idLong, member.user.idLong)
+    protected suspend fun safeEndGame(): Job {
+        return launch(Unconfined) { endGame() }
+    }
+
+    suspend fun endGame() = GameHandler.stopGame(channel.idLong, member.user.idLong)
 
 }
 
 abstract class ReactionGame(member: Member, channel: TextChannel, private val reactions: List<String>) : Game(member, channel) {
 
     companion object {
-        private val reactionGameContext = newFixedThreadPoolContext(30, "Reaction Game")
+        private val reactionGameContext = newFixedThreadPoolContext(10, "Reaction Game")
     }
 
-    protected var currentMessage: CachedMessage? = null
+    private val currentMessageSync = Any()
+    private var _currentMessage: ConflatedMessage? = null
+    protected val currentMessage
+        get() = _currentMessage?.cachedMessage
 
-    private interface ReactionGameEvent
-    private object StartEvent : ReactionGameEvent
-    private object DestroyEvent : ReactionGameEvent
-    private class ReactionEvent(val event: GenericMessageReactionEvent) : ReactionGameEvent
-    private class DeleteEvent(val event: MessageDeleteEvent) : ReactionGameEvent
 
-    private val reactionGameActor = actor<ReactionGameEvent>(context = reactionGameContext, capacity = Channel.UNLIMITED) {
+    private sealed class ReactionGameEvent {
+        class ReactionEvent(val event: GenericMessageReactionEvent) : ReactionGameEvent()
+        class DeleteEvent(val event: MessageDeleteEvent) : ReactionGameEvent()
+    }
+
+    private val reactionGameActor = smartActor<ReactionGameEvent>(reactionGameContext, Channel.UNLIMITED, CoroutineStart.LAZY) {
         for (event in this.channel) {
             if (destroyed) continue
             handleEvent(event)
-        }
-
-        handleEvent(DestroyEvent)
-    }
-
-    private class MessageEvent(val newContent: Message)
-
-    // TODO this works perfectly, maybe make it a separate thing I can reuse elsewhere?
-    private val messageActor = actor<MessageEvent>(context = reactionGameContext, capacity = Channel.UNLIMITED) {
-        var contentDeferred = CompletableDeferred<Message?>()
-
-        val contentMutex = Mutex()
-        var stopJob = false
-        launch(reactionGameContext) {
-            while (isActive) {
-                contentMutex.withLock {
-                    // don't await if job is stopped and nothing is left to change in message
-                    // (If coroutine was delayed when actor was cancelled)
-                    if (stopJob && !contentDeferred.isCompleted) return@launch
-                }
-                val newContent = contentDeferred.await()
-                contentMutex.withLock {
-                    // cancel job if null content is received (If the completable was awaiting when actor was cancelled)
-                    if (newContent == null) return@launch
-                    contentDeferred = CompletableDeferred()
-                }
-                // Create or edit the message with new content
-                if (currentMessage == null) {
-                    currentMessage = channel.sendMessage(newContent).sendCached()
-                    reactions.forEach { currentMessage!!.reactions += it }
-                } else {
-                    currentMessage!!.contentMessage = newContent!!
-                }
-                // Delay for 2 seconds so we don't spam discord
-                delay(2, TimeUnit.SECONDS)
-            }
-        }
-
-        for (event in this.channel) {
-            contentMutex.withLock {
-                // Create new if already completed
-                if (contentDeferred.isCompleted) contentDeferred = CompletableDeferred()
-                // Send the new content
-                contentDeferred.complete(event.newContent)
-            }
-        }
-        stopJob = true
-        contentMutex.withLock {
-            // Send a null if thread is awaiting
-            if (!contentDeferred.isCompleted) contentDeferred.complete(null)
         }
     }
 
     private suspend fun handleEvent(event: ReactionGameEvent) {
         when (event) {
-            is StartEvent -> {
-                channel.jda.addEventListener(listener)
-            }
-            is DestroyEvent -> {
-                channel.jda.removeEventListener(listener)
-                currentMessage?.reactions?.clear()
-            }
-            is ReactionEvent -> {
+            is ReactionGameEvent.ReactionEvent -> {
                 val reactionEvent = event.event
                 if (currentMessage == null || reactionEvent.user.idLong == reactionEvent.jda.selfUser.idLong) return
 
@@ -186,7 +132,7 @@ abstract class ReactionGame(member: Member, channel: TextChannel, private val re
 
                 onGenericMessageReaction(reactionEvent)
             }
-            is DeleteEvent -> {
+            is ReactionGameEvent.DeleteEvent -> {
                 if (currentMessage?.idLong == event.event.messageIdLong) endGame()
             }
         }
@@ -196,30 +142,35 @@ abstract class ReactionGame(member: Member, channel: TextChannel, private val re
         on<GenericMessageReactionEvent> {
             if (event.channel.idLong != channel.idLong) return@on
 
-            reactionGameActor.sendBlocking(ReactionEvent(event))
+            reactionGameActor.send(ReactionGameEvent.ReactionEvent(event))
         }
         on<MessageDeleteEvent> {
-            reactionGameActor.send(DeleteEvent(event))
+            reactionGameActor.send(ReactionGameEvent.DeleteEvent(event))
         }
     }
 
-    protected suspend fun setContent(messageEmbed: MessageEmbed) = setContent(message { setEmbed(messageEmbed) })
+    protected fun setContent(messageEmbed: MessageEmbed) = setContent(message { setEmbed(messageEmbed) })
     @Suppress("MemberVisibilityCanBePrivate")
-    protected suspend fun setContent(message: Message) {
-        messageActor.send(MessageEvent(message))
+    protected fun setContent(message: Message) = synchronized(currentMessageSync) {
+        if (_currentMessage == null) {
+            _currentMessage = channel.sendMessage(message).sendCached().asConflated(reactionGameContext, 2)
+            currentMessage!!.reactions += reactions
+        } else _currentMessage!!.contentMessage = message
     }
 
     abstract suspend fun onGenericMessageReaction(event: GenericMessageReactionEvent)
 
     override suspend fun start() {
         super.start()
-        reactionGameActor.send(StartEvent)
+        channel.jda.addEventListener(listener)
     }
 
     override suspend fun destroy() {
         super.destroy()
-        reactionGameActor.close()
-        messageActor.close()
+        channel.jda.removeEventListener(listener)
+
+        reactionGameActor.closeAndJoin()
+        currentMessage?.reactions?.clear()
     }
 
 }

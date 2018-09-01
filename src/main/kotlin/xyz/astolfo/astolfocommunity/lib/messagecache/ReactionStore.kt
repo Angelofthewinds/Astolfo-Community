@@ -11,12 +11,14 @@ interface ReactionStore : Iterable<MessageReaction> {
     operator fun plusAssign(reactionEmote: MessageReaction.ReactionEmote) =
             if (reactionEmote.isEmote) plusAssign(reactionEmote.emote)
             else plusAssign(reactionEmote.name)
+    operator fun plusAssign(unicodeList: Iterable<String>) = unicodeList.forEach(::plusAssign)
 
     operator fun minusAssign(unicode: String)
     operator fun minusAssign(emote: Emote)
     operator fun minusAssign(reactionEmote: MessageReaction.ReactionEmote) =
             if (reactionEmote.isEmote) minusAssign(reactionEmote.emote)
             else minusAssign(reactionEmote.name)
+    operator fun minusAssign(unicodeList: Iterable<String>) = unicodeList.forEach(::minusAssign)
 
     fun clear()
     fun clear(member: Member)
