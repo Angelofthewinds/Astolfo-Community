@@ -76,8 +76,8 @@ class SessionListener(
                         guildMessageData.timeIssued
                 )) {
                     val commandScope = CommandScope(application)
-                    if (currentSession.onMessageReceived(commandScope) == CommandSession.ResponseAction.RUN_COMMAND) {
-                        // If the response listeners return true or all the response listeners removed themselves
+                    if (currentSession.onMessageReceived(commandScope)) {
+                        // If all the response listeners allowed the "command" to run
                         handleEvent(SessionEvent.CleanUp)
                     }
                 }
@@ -197,17 +197,9 @@ class SessionListener(
 
                 // Checks if command is the same as the previous, if so, check if its a follow up response
                 if (currentSession != null && currentSession.commandPath.equals(commandPath, true)) {
-                    val action = guildMessageData.withCommandScope(currentSession, commandPath, commandContent) {
-                        currentSession.onMessageReceived(it)
-                    }
-                    when (action) {
-                        CommandSession.ResponseAction.RUN_COMMAND -> {
-                            runNewSession()
-                        }
-                        CommandSession.ResponseAction.IGNORE_COMMAND -> {
-                        }
-                        else -> TODO("Invalid action: $action")
-                    }
+                    if (guildMessageData.withCommandScope(currentSession, commandPath, commandContent) {
+                                currentSession.onMessageReceived(it)
+                            }) runNewSession()
                 } else {
                     runNewSession()
                 }

@@ -3,9 +3,9 @@ package xyz.astolfo.astolfocommunity.menus
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
-import xyz.astolfo.astolfocommunity.commands.CommandSession
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
-import xyz.astolfo.astolfocommunity.lib.value
+import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.messages.*
 import kotlin.math.max
 import kotlin.math.min
@@ -87,7 +87,7 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
     private val listener = object : ListenerAdapter() {
         override fun onGenericMessageReaction(event: GenericMessageReactionEvent?) {
             if (event!!.user.idLong != commandExecution.event.author.idLong) return
-            if (message?.idLong?.value != event.messageIdLong) return
+            if (message?.idLong != event.messageIdLong) return
             val name = event.reactionEmote.name
             if (name == SELECT) {
                 destroy()
@@ -104,26 +104,18 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
         }
     }
 
-    private val destroyListener = object : CommandSession.SessionListener() {
-        override fun onSessionDestroyed() {
-            destroy()
-        }
-    }
-
     var isDestroyed = false
         private set
 
     init {
         commandExecution.event.jda.addEventListener(listener)
         render()
-        commandExecution.session.addListener(destroyListener)
     }
 
     fun destroy() {
         // Clean Up
         if (isDestroyed) return
         isDestroyed = true
-        commandExecution.session.removeListener(destroyListener)
         commandExecution.event.jda.removeEventListener(listener)
         message?.delete()
         message = null
@@ -151,9 +143,9 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
             if (pageCount > 1) emotes.add(FORWARD_ARROW)
             if (pageCount > 2) emotes.add(END_ARROW)
 
-            emotes.forEach { message!!.addReaction(it) }
+            emotes.forEach { message!!.reactions += it }
         } else {
-            message!!.editMessage(newMessage)
+            message!!.contentMessage = newMessage
         }
     }
 

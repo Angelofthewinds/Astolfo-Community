@@ -13,8 +13,12 @@ import okhttp3.Request
 import org.apache.commons.text.StringEscapeUtils
 import org.jsoup.Jsoup
 import org.jsoup.safety.Whitelist
-import xyz.astolfo.astolfocommunity.*
-import xyz.astolfo.astolfocommunity.commands.*
+import xyz.astolfo.astolfocommunity.Emotes
+import xyz.astolfo.astolfocommunity.RadioEntry
+import xyz.astolfo.astolfocommunity.commands.CommandAction
+import xyz.astolfo.astolfocommunity.commands.CommandBuilder
+import xyz.astolfo.astolfocommunity.commands.argsIterator
+import xyz.astolfo.astolfocommunity.commands.next
 import xyz.astolfo.astolfocommunity.lib.*
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.menus.*
@@ -645,7 +649,7 @@ suspend fun CommandScope.joinAction(forceJoinMessage: Boolean = false): Completa
 suspend fun CommandScope.playAction(top: Boolean, skip: Boolean) {
     // Make the play command work like the join command as well
     val musicSession = joinAction() ?: return
-    if(args.isEmpty()) {
+    if (args.isEmpty()) {
         errorEmbed("Give me something to search! I support youtube, soundcloud, vimeo, etc.").queue()
         return
     }

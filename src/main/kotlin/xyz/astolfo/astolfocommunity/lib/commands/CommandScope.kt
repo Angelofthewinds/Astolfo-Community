@@ -12,11 +12,17 @@ import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.GuildSettings
 import xyz.astolfo.astolfocommunity.commands.CommandArgs
 import xyz.astolfo.astolfocommunity.commands.CommandSession
+import xyz.astolfo.astolfocommunity.commands.ResponseListener
+import xyz.astolfo.astolfocommunity.lib.cancelQuietly
+import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.messages.*
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.experimental.AbstractCoroutineContextElement
 import kotlin.coroutines.experimental.CoroutineContext
 import kotlin.coroutines.experimental.coroutineContext
+import kotlin.reflect.KClass
+import kotlin.reflect.full.isSubclassOf
 
 interface CommandData {
     val event: GuildMessageReceivedEvent
@@ -69,6 +75,9 @@ interface CommandScope : CommandData, RequestedBy {
 
     // Extensions
 
+    fun Message.sendCached(): CachedMessage = send().sendCached()
+    fun MessageEmbed.sendCached(): CachedMessage = send().sendCached()
+
     fun Message.send(): MessageAction = event.channel.sendMessage(this)
     fun MessageEmbed.send(): MessageAction = event.channel.sendMessage(this)
 
@@ -86,26 +95,33 @@ interface CommandScope : CommandData, RequestedBy {
     suspend fun errorEmbed(text: String) = errorEmbedSuspend(text)
     suspend fun errorEmbed(builder: SuspendingEmbedBuilderBlock) = errorEmbedSuspend(builder)
 
-    // Message Listener
-
-    fun responseListener(listener: suspend CommandScope.() -> CommandSession.ResponseAction) = object : CommandSession.SessionListener() {
-        override suspend fun onMessageReceived(commandScope: CommandScope): CommandSession.ResponseAction = listener(commandScope)
-    }
-
     // Temp Message
 
     suspend fun <T> tempMessage(embed: MessageEmbed, temp: suspend () -> T): T = tempMessage(message { setEmbed(embed) }, temp)
     suspend fun <T> tempMessage(message: Message, block: suspend () -> T): T = suspendCancellableCoroutine { cont ->
         val cachedMessage = message.send().sendCached()
         val job = async(cont.context) { block() }
-        job.invokeOnCompletion { error ->
+        job.invokeOnCompletion(onCancelling = true) { error ->
             if (error != null) cont.resumeWithException(error)
             else cont.resume(job.getCompleted())
-        }
-        cont.invokeOnCancellation {
-            job.cancel()
             cachedMessage.delete()
         }
+        cont.invokeOnCancellation { job.cancelQuietly(it) }
+    }
+
+    suspend fun <T> captureErrors(errors: List<KClass<out Throwable>>, block: suspend () -> T): T? = try {
+        block()
+    } catch (e: Throwable) {
+        e.printStackTrace()
+        val exceptionClass = e::class
+        if (errors.any { exceptionClass.isSubclassOf(it::class) }) {
+            errorEmbed {
+                description("Internal Error occurred")
+            }.send()
+        } else {
+            throw e
+        }
+        null
     }
 
     // TODO redo this system
@@ -125,6 +141,8 @@ suspend fun <E> CommandScope.withGuildSettings(block: suspend (GuildSettings) ->
     guildSettings = it
     result
 }
+
+suspend inline fun <reified T : Throwable, R> CommandScope.captureError(noinline block: suspend () -> R): R? = captureErrors(listOf(T::class), block)
 
 class CommandScopeImpl(
         override val application: AstolfoCommunityApplication,

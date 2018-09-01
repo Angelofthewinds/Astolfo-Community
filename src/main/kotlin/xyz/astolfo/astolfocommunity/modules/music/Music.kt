@@ -34,12 +34,12 @@ import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.AstolfoProperties
 import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.lib.synchronized2
 import xyz.astolfo.astolfocommunity.menus.selectionBuilder
 import xyz.astolfo.astolfocommunity.messages.description
 import xyz.astolfo.astolfocommunity.messages.embed
 import xyz.astolfo.astolfocommunity.messages.errorEmbed
-import xyz.astolfo.astolfocommunity.messages.sendCached
 import xyz.astolfo.astolfocommunity.support.SupportLevel
 import java.io.File
 import java.net.MalformedURLException
@@ -681,21 +681,21 @@ class MusicSession(val musicManager: MusicManager, val guild: Guild, var boundCh
 
             suspend fun run(cancelled: Boolean) {
                 if (cancelled) {
-                    message.editMessage(embed("\uD83D\uDD0E Loading **$query** to queue... **[CANCELLED]**"))
+                    message.contentEmbed = embed("\uD83D\uDD0E Loading **$query** to queue... **[CANCELLED]**")
                     completableDeferred.cancel()
                     return
                 }
                 val audioItem = try {
                     completableDeferred.await()
                 } catch (e: Throwable) {
-                    when (e) {
-                        is FriendlyException -> message.editMessage(errorEmbed("❗ Failed due to an error: **${e.message}**"))
-                        is MusicNoMatchException -> message.editMessage(errorEmbed("❗ No matches found for **$query**"))
+                    message.contentEmbed = when (e) {
+                        is FriendlyException -> errorEmbed("❗ Failed due to an error: **${e.message}**")
+                        is MusicNoMatchException -> errorEmbed("❗ No matches found for **$query**")
                         else -> throw e
                     }
                     return
                 }
-                queueItem(audioItem, textChannel, member, query, top, skip) { message.editMessage(it) }
+                queueItem(audioItem, textChannel, member, query, top, skip) { message.contentEmbed = it }
             }
         }
     }

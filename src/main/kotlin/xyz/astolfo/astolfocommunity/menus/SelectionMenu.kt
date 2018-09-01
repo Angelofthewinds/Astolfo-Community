@@ -1,16 +1,15 @@
 package xyz.astolfo.astolfocommunity.menus
 
 import com.jagrosh.jdautilities.commons.utils.FinderUtil
-import kotlinx.coroutines.experimental.CompletableDeferred
 import kotlinx.coroutines.experimental.suspendCancellableCoroutine
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.Role
 import net.dv8tion.jda.core.entities.TextChannel
-import xyz.astolfo.astolfocommunity.commands.CommandSession
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.messages.*
-import java.util.concurrent.atomic.AtomicReference
 
 fun CommandScope.memberSelectionBuilder(query: String) = selectionBuilder<Member>()
         .results(FinderUtil.findMembers(query, event.guild))
@@ -63,46 +62,41 @@ class SelectionMenuBuilder<E>(private val commandScope: CommandScope) {
 
         if (results.size == 1) return results.first()
 
-        val menu = paginator(title) {
-            provider(8, results.map { resultsRenderer.invoke(it) })
-            renderer { this@SelectionMenuBuilder.renderer.invoke(this) }
-        }
-        val response = CompletableDeferred<E?>()
-        val errorMessage = AtomicReference<CachedMessage>()
-        // Waits for a follow up response for user selection
-        responseListener {
-            if (menu.isDestroyed) {
-                CommandSession.ResponseAction.UNREGISTER_LISTENER
-            } else if (args.matches("\\d+".toRegex())) {
-                val numSelection = args.toBigInteger().toInt()
-                if (numSelection < 1 || numSelection > results.size) {
-                    errorMessage.getAndSet(errorEmbed("Unknown Selection").send().sendCached())?.delete()
-                    return@responseListener CommandSession.ResponseAction.IGNORE_COMMAND
-                }
-                val selectedMember = results[numSelection - 1]
-                response.complete(selectedMember)
-                CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER
-            } else {
-                if (event.message.contentRaw == args) {
-                    errorMessage.getAndSet(errorEmbed("Response must be a number!").send().sendCached())?.delete()
-                    return@responseListener CommandSession.ResponseAction.IGNORE_COMMAND
-                } else CommandSession.ResponseAction.RUN_COMMAND
-            }
-        }
-        val dispose = {
-            synchronized(menu) {
-                if (!menu.isDestroyed) menu.destroy()
-            }
-            errorMessage.getAndSet(null)?.delete()
-        }
         return suspendCancellableCoroutine { cont ->
-            val handle = response.invokeOnCompletion { t ->
-                dispose()
-                if (t == null) cont.resume(response.getCompleted())
-                else cont.resumeWithException(t)
+            val menu = paginator(title) {
+                provider(8, results.map { resultsRenderer.invoke(it) })
+                renderer { this@SelectionMenuBuilder.renderer.invoke(this) }
+            }
+
+            var errorMessage: CachedMessage? = null
+            // Waits for a follow up response for user selection
+            val handle = session.responseListener {
+                errorMessage?.delete()
+                if (menu.isDestroyed) {
+                    dispose()
+                    return@responseListener
+                }
+                if (args.matches(Regex("\\d+"))) {
+                    val numSelection = args.toBigInteger().toInt() - 1
+                    if (numSelection !in results.indices) {
+                        errorMessage = errorEmbed("Unknown Selection").sendCached()
+                        shouldRunCommand = false
+                        return@responseListener
+                    }
+                    menu.destroy()
+                    cont.resume(results[numSelection])
+                    dispose(false)
+                    return@responseListener
+                }
+                if (event.message.contentRaw == args) {
+                    errorMessage = errorEmbed("Response must be a number!").sendCached()
+                    shouldRunCommand = false
+                    return@responseListener
+                } else dispose()
             }
             cont.invokeOnCancellation {
-                dispose()
+                errorMessage?.delete()
+                menu.destroy()
                 handle.dispose()
             }
         }
@@ -128,21 +122,24 @@ class ChatInputBuilder(private val execution: CommandScope) {
         }.send().sendCached()
         // Waits for a follow up response for user selection
         return suspendCancellableCoroutine { cont ->
-            responseListener {
+            val handle = session.responseListener {
                 if (message.isDeleted) {
-                    CommandSession.ResponseAction.UNREGISTER_LISTENER
+                    dispose()
+                    return@responseListener
+                }
+                val result = responseValidator.invoke(args)
+                if (result) {
+                    // If the validator says its valid
+                    cont.resume(args)
+                    dispose(false)
                 } else {
-                    val result = responseValidator.invoke(args)
-                    if (result) {
-                        // If the validator says its valid
-                        cont.resume(args)
-                        CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER
-                    } else {
-                        CommandSession.ResponseAction.IGNORE_COMMAND
-                    }
+                    shouldRunCommand = false
                 }
             }
-            cont.invokeOnCancellation { message.delete() }
+            cont.invokeOnCancellation {
+                message.delete()
+                handle.dispose()
+            }
         }
     }
 }

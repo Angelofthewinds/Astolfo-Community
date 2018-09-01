@@ -11,6 +11,8 @@ import net.dv8tion.jda.core.entities.Guild
 import net.dv8tion.jda.core.entities.TextChannel
 import okhttp3.*
 import org.apache.commons.lang3.StringUtils
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.text.NumberFormat
 import java.util.concurrent.ConcurrentHashMap
@@ -250,3 +252,5 @@ fun String.smartParseBoolean() = when {
     StringUtils.equalsAnyIgnoreCase(this, "disable", "disabled", "off", "false", "no") -> false
     else -> null
 }
+
+fun Any.createLogger(): Logger = LoggerFactory.getLogger(this::class.java)

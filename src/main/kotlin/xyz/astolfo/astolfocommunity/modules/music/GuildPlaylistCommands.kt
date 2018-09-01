@@ -5,7 +5,6 @@ import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack
 import net.dv8tion.jda.core.Permission
 import xyz.astolfo.astolfocommunity.GuildPlaylistEntry
-import xyz.astolfo.astolfocommunity.commands.CommandSession
 import xyz.astolfo.astolfocommunity.commands.argsIterator
 import xyz.astolfo.astolfocommunity.commands.next
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
@@ -168,14 +167,17 @@ internal fun ModuleBuilder.createGuildPlaylistCommands() {
                             }
                         }
                         // Waits for a follow up response for song selection
-                        responseListener {
+                        session.responseListener {
                             if (menu.isDestroyed) {
-                                CommandSession.ResponseAction.UNREGISTER_LISTENER
-                            } else if (args.matches("\\d+".toRegex())) {
+                                dispose()
+                                return@responseListener
+                            }
+                            if (args.matches("\\d+".toRegex())) {
                                 val numSelection = args.toBigInteger().toInt()
                                 if (numSelection < 1 || numSelection > audioPlaylist.tracks.size) {
                                     errorEmbed("Unknown Selection").queue()
-                                    return@responseListener CommandSession.ResponseAction.IGNORE_COMMAND
+                                    shouldRunCommand = false
+                                    return@responseListener
                                 }
                                 val selectedTrack = audioPlaylist.tracks[numSelection - 1]
 
@@ -186,10 +188,11 @@ internal fun ModuleBuilder.createGuildPlaylistCommands() {
 
                                 embed { description("[${selectedTrack.info.title}](${selectedTrack.info.uri}) has been added to the playlist **${playlist.name}**") }.queue()
                                 menu.destroy()
-                                CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER // Don't run the command since song was added
+                                dispose(false)
+                                return@responseListener // Don't run the command since song was added
                             } else {
                                 embed { description("Please type the # of the song you want") }.queue()
-                                CommandSession.ResponseAction.IGNORE_COMMAND // Still waiting for valid response
+                                shouldRunCommand = false // Still waiting for valid response
                             }
                         }
                     } else {

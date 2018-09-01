@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit
 
 class CommandSessionImpl(override val commandPath: String) : CommandSession {
 
-    private val listeners: MutableList<CommandSession.SessionListener> = CopyOnWriteArrayList()
+    private val listeners = CopyOnWriteArrayList<ResponseListenerEntry>()
     val parentJob = Job()
 
     private var destroyed = false
@@ -22,35 +22,38 @@ class CommandSessionImpl(override val commandPath: String) : CommandSession {
         }
     }
 
-    override fun addListener(listener: CommandSession.SessionListener): Boolean {
+    override fun responseListener(listener: ResponseListener): DisposableHandle {
         if (destroyed) IllegalStateException("You cannot register an listener to a destroyed session!")
-        return listeners.add(listener)
+        val entry = ResponseListenerEntry(listener)
+        listeners += entry
+        return entry.handle
     }
 
-    override fun removeListener(listener: CommandSession.SessionListener) = listeners.remove(listener)
-    override fun getListeners() = listeners.toList()
-
-    override suspend fun onMessageReceived(commandScope: CommandScope): CommandSession.ResponseAction {
-        var action = CommandSession.ResponseAction.RUN_COMMAND
-        loop@ for (it in listeners.toList()) {
-            val listenerAction = it.onMessageReceived(commandScope)
-            when (listenerAction) {
-                CommandSession.ResponseAction.UNREGISTER_LISTENER -> removeListener(it)
-                CommandSession.ResponseAction.IGNORE_AND_UNREGISTER_LISTENER -> {
-                    removeListener(it)
-                    action = CommandSession.ResponseAction.IGNORE_COMMAND
-                }
-                CommandSession.ResponseAction.NOTHING -> continue@loop
-                else -> action = listenerAction
-            }
+    override suspend fun onMessageReceived(commandScope: CommandScope): Boolean {
+        var topShouldRunCommand = true
+        listeners.forEach {
+            it.listener(object : CommandResponseScope, CommandScope by commandScope, DisposableHandle by it.handle {
+                override var shouldRunCommand
+                    get() = topShouldRunCommand
+                    set(value) {
+                        topShouldRunCommand = value
+                    }
+            })
         }
-        return action
+        return topShouldRunCommand
     }
 
     override fun destroy() = runBlocking {
         destroyed = true
-        listeners.forEach { it.onSessionDestroyed() }
         parentJob.cancelAndJoin()
+    }
+
+    inner class ResponseListenerEntry(val listener: ResponseListener) {
+        val handle = object : DisposableHandle {
+            override fun dispose() {
+                listeners -= this@ResponseListenerEntry
+            }
+        }
     }
 }
 
@@ -62,21 +65,9 @@ class InheritedCommandSession(override val commandPath: String) : CommandSession
         throw inheritedError()
     }
 
-    override fun addListener(listener: CommandSession.SessionListener): Boolean {
-        throw inheritedError()
-    }
+    override fun responseListener(listener: ResponseListener): DisposableHandle = NonDisposableHandle
 
-    override fun removeListener(listener: CommandSession.SessionListener): Boolean {
-        throw inheritedError()
-    }
-
-    override fun getListeners(): List<CommandSession.SessionListener> {
-        throw inheritedError()
-    }
-
-    override suspend fun onMessageReceived(commandScope: CommandScope): CommandSession.ResponseAction {
-        throw inheritedError()
-    }
+    override suspend fun onMessageReceived(commandScope: CommandScope): Boolean = true
 
     override fun destroy() {
         throw inheritedError()
@@ -84,31 +75,28 @@ class InheritedCommandSession(override val commandPath: String) : CommandSession
 
 }
 
+interface CommandResponseScope : CommandScope, DisposableHandle {
+    var shouldRunCommand: Boolean
+
+    fun dispose(shouldRunCommand: Boolean) {
+        dispose()
+        this.shouldRunCommand = shouldRunCommand
+    }
+}
+
+typealias ResponseListener = suspend CommandResponseScope.() -> Unit
+
 interface CommandSession {
     val commandPath: String
 
+    fun responseListener(listener: ResponseListener): DisposableHandle
+
     fun updatable(rate: Long, unit: TimeUnit = TimeUnit.SECONDS, updater: (CommandSession) -> Unit)
 
-    fun addListener(listener: SessionListener): Boolean
-    fun removeListener(listener: SessionListener): Boolean
-    fun getListeners(): List<SessionListener>
-
-    suspend fun onMessageReceived(commandScope: CommandScope): ResponseAction
+    /**
+     * @return true if command should run
+     */
+    suspend fun onMessageReceived(commandScope: CommandScope): Boolean
 
     fun destroy()
-
-    open class SessionListener {
-        open suspend fun onMessageReceived(commandScope: CommandScope) = ResponseAction.NOTHING
-        @Deprecated("Use suspending functions instead")
-        open fun onSessionDestroyed() {
-        }
-    }
-
-    enum class ResponseAction {
-        NOTHING,
-        RUN_COMMAND,
-        IGNORE_COMMAND,
-        IGNORE_AND_UNREGISTER_LISTENER,
-        UNREGISTER_LISTENER
-    }
 }

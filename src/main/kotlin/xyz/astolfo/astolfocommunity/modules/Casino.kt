@@ -4,12 +4,11 @@ import net.dv8tion.jda.core.entities.MessageEmbed
 import xyz.astolfo.astolfocommunity.Emotes
 import xyz.astolfo.astolfocommunity.lib.RateLimiter
 import xyz.astolfo.astolfocommunity.lib.Utils
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.menus.paginator
 import xyz.astolfo.astolfocommunity.menus.provider
 import xyz.astolfo.astolfocommunity.messages.color
 import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.embedSuspend
-import xyz.astolfo.astolfocommunity.messages.sendCached
 import java.awt.Color
 import java.util.*
 import java.util.concurrent.TimeUnit

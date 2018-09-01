@@ -12,7 +12,11 @@ import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import xyz.astolfo.astolfocommunity.lib.levenshteinDistance
-import xyz.astolfo.astolfocommunity.messages.*
+import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
+import xyz.astolfo.astolfocommunity.messages.description
+import xyz.astolfo.astolfocommunity.messages.embed
+import xyz.astolfo.astolfocommunity.messages.image
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
@@ -205,7 +209,7 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
                         .filter { !hasGuessed.contains(it.name) }
                         .sortedByDescending { it.probability }.firstOrNull()
 
-                if(bestGuess == null){
+                if (bestGuess == null) {
                     // No more guesses, defeat
                     channel.sendMessage("Aww, you have defeated me!").queue()
                     endGame()

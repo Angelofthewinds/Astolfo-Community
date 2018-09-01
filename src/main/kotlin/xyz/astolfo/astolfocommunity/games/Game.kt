@@ -16,12 +16,11 @@ import net.dv8tion.jda.core.entities.MessageEmbed
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageDeleteEvent
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
-import net.dv8tion.jda.core.hooks.ListenerAdapter
 import xyz.astolfo.astolfocommunity.lib.hasPermission
-import xyz.astolfo.astolfocommunity.messages.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.jda.builders.listenerBuilder
+import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
+import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.messages.message
-import xyz.astolfo.astolfocommunity.messages.sendCached
-import xyz.astolfo.astolfocommunity.lib.value
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -141,9 +140,9 @@ abstract class ReactionGame(member: Member, channel: TextChannel, private val re
                 // Create or edit the message with new content
                 if (currentMessage == null) {
                     currentMessage = channel.sendMessage(newContent).sendCached()
-                    reactions.forEach { currentMessage!!.addReaction(it) }
+                    reactions.forEach { currentMessage!!.reactions += it }
                 } else {
-                    currentMessage!!.editMessage(newContent!!)
+                    currentMessage!!.contentMessage = newContent!!
                 }
                 // Delay for 2 seconds so we don't spam discord
                 delay(2, TimeUnit.SECONDS)
@@ -172,13 +171,13 @@ abstract class ReactionGame(member: Member, channel: TextChannel, private val re
             }
             is DestroyEvent -> {
                 channel.jda.removeEventListener(listener)
-                currentMessage?.clearReactions()
+                currentMessage?.reactions?.clear()
             }
             is ReactionEvent -> {
                 val reactionEvent = event.event
                 if (currentMessage == null || reactionEvent.user.idLong == reactionEvent.jda.selfUser.idLong) return
 
-                if (currentMessage!!.idLong.value != reactionEvent.messageIdLong || reactionEvent.user.isBot) return
+                if (currentMessage!!.idLong != reactionEvent.messageIdLong || reactionEvent.user.isBot) return
 
                 if (reactionEvent.user.idLong != member.user.idLong) {
                     if (reactionEvent.textChannel.hasPermission(Permission.MESSAGE_MANAGE)) reactionEvent.reaction.removeReaction(reactionEvent.user).queue()
@@ -188,20 +187,19 @@ abstract class ReactionGame(member: Member, channel: TextChannel, private val re
                 onGenericMessageReaction(reactionEvent)
             }
             is DeleteEvent -> {
-                if (currentMessage?.idLong?.value == event.event.messageIdLong) endGame()
+                if (currentMessage?.idLong == event.event.messageIdLong) endGame()
             }
         }
     }
 
-    private val listener = object : ListenerAdapter() {
-        override fun onGenericMessageReaction(event: GenericMessageReactionEvent) {
-            if (event.channel.idLong != channel.idLong) return
+    private val listener = listenerBuilder(reactionGameContext) {
+        on<GenericMessageReactionEvent> {
+            if (event.channel.idLong != channel.idLong) return@on
 
             reactionGameActor.sendBlocking(ReactionEvent(event))
         }
-
-        override fun onMessageDelete(event: MessageDeleteEvent) {
-            reactionGameActor.sendBlocking(DeleteEvent(event))
+        on<MessageDeleteEvent> {
+            reactionGameActor.send(DeleteEvent(event))
         }
     }
 

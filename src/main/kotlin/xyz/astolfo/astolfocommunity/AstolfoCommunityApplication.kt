@@ -23,7 +23,7 @@ import org.springframework.cache.annotation.EnableCaching
 import org.springframework.context.annotation.Bean
 import org.springframework.web.servlet.HandlerExceptionResolver
 import xyz.astolfo.astolfocommunity.commands.MessageListener
-import xyz.astolfo.astolfocommunity.messages.MessageCache
+import xyz.astolfo.astolfocommunity.lib.messagecache.MessageCache
 import xyz.astolfo.astolfocommunity.modules.ModuleManager
 import xyz.astolfo.astolfocommunity.modules.admin.JoinLeaveManager
 import xyz.astolfo.astolfocommunity.modules.music.MusicManager
