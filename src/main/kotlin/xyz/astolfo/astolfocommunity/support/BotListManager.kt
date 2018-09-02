@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestMethod
 import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.AstolfoProperties
-import xyz.astolfo.astolfocommunity.messages.message
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import java.util.concurrent.TimeUnit
 
 

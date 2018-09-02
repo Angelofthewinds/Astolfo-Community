@@ -8,12 +8,12 @@ import xyz.astolfo.astolfocommunity.GuildPlaylistEntry
 import xyz.astolfo.astolfocommunity.commands.argsIterator
 import xyz.astolfo.astolfocommunity.commands.next
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.splitFirst
 import xyz.astolfo.astolfocommunity.menus.chatInput
 import xyz.astolfo.astolfocommunity.menus.paginator
 import xyz.astolfo.astolfocommunity.menus.provider
 import xyz.astolfo.astolfocommunity.menus.renderer
-import xyz.astolfo.astolfocommunity.messages.*
 import xyz.astolfo.astolfocommunity.modules.ModuleBuilder
 
 internal fun ModuleBuilder.createGuildPlaylistCommands() {
@@ -158,7 +158,7 @@ internal fun ModuleBuilder.createGuildPlaylistCommands() {
                             provider(8, audioPlaylist.tracks.map { audioTrack -> "**${audioTrack.info.title}** *by ${audioTrack.info.author}*" })
                             renderer {
                                 message {
-                                    embed {
+                                    embedRaw {
                                         titleProvider.invoke()?.let { title(it) }
                                         description("Type the number of the song you want.\n$providedString")
                                         footer("Page ${currentPage + 1}/${provider.pageCount}")
@@ -212,14 +212,14 @@ internal fun ModuleBuilder.createGuildPlaylistCommands() {
             description("Queues a guildplaylist to be played")
             usage("[name]")
             musicAction {
-                playAction(false, false)
+                playGuildAction(false)
             }
         }
         command("playshuffled", "psh", "queueshuffle", "qsh") {
             description("Queues a shuffled guildplaylist to be played")
             usage("[name]")
             musicAction {
-                playAction(true, false)
+                playGuildAction(true)
             }
         }
         command("remove") {
@@ -285,7 +285,7 @@ internal fun ModuleBuilder.createGuildPlaylistCommands() {
     }
 }
 
-private suspend fun CommandScope.playAction(shuffle: Boolean) {
+private suspend fun CommandScope.playGuildAction(shuffle: Boolean) {
     val musicSession = joinAction() ?: return
     if (args.isBlank()) {
         errorEmbed("Enter a playlist name!").queue()

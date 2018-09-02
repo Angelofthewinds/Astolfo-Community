@@ -8,10 +8,6 @@ import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.lib.commands.withGuildSettings
 import xyz.astolfo.astolfocommunity.lib.smartParseBoolean
 import xyz.astolfo.astolfocommunity.menus.textChannelSelectionBuilder
-import xyz.astolfo.astolfocommunity.messages.color
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.field
-import xyz.astolfo.astolfocommunity.messages.title
 import xyz.astolfo.astolfocommunity.modules.ModuleBuilder
 import xyz.astolfo.astolfocommunity.support.SupportLevel
 import java.awt.Color
@@ -153,11 +149,10 @@ fun ModuleBuilder.settingsCommand() = command("settings") {
                 val donationEntry = application.donationManager.getByMember(event.member.guild.owner)
                 val supportLevel = SupportLevel.SUPPORTER
                 if (donationEntry.ordinal < supportLevel.ordinal) {
-                    embed {
+                    errorEmbed {
                         description("\uD83D\uDD12 Due to performance reasons default volume changing is locked!" +
                                 " You can unlock this feature by asking the owner of your server to become a [patreon.com/theprimedtnt](https://www.patreon.com/theprimedtnt)" +
                                 " and getting at least the **${supportLevel.rewardName}** Tier.")
-                        color(Color.RED)
                     }.queue()
                     return@set false
                 }

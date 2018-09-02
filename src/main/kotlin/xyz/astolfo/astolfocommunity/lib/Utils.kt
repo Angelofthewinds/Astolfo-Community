@@ -253,4 +253,13 @@ fun String.smartParseBoolean() = when {
     else -> null
 }
 
-fun Any.createLogger(): Logger = LoggerFactory.getLogger(this::class.java)
+fun Any.createLogger(): Logger {
+    val kclazz = this::class
+    return LoggerFactory.getLogger(if (kclazz.isCompanion) kclazz.java.enclosingClass else kclazz.java)
+}
+
+fun  <K, V> List<Map<K,V>>.flatten(): Map<K, V> {
+    val map = mutableMapOf<K, V>()
+    forEach(map::putAll)
+    return map
+}

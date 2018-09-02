@@ -11,8 +11,8 @@ import xyz.astolfo.astolfocommunity.AstolfoPermissionUtils
 import xyz.astolfo.astolfocommunity.lib.commands.CommandDataImpl
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.lib.hasPermission
+import xyz.astolfo.astolfocommunity.lib.jda.errorEmbed
 import xyz.astolfo.astolfocommunity.lib.splitFirst
-import xyz.astolfo.astolfocommunity.messages.errorEmbed
 import xyz.astolfo.astolfocommunity.modules.Module
 import xyz.astolfo.astolfocommunity.modules.ModuleManager
 import java.util.concurrent.TimeUnit
@@ -219,7 +219,7 @@ class SessionListener(
                 block(commandScope)
             }
 
-    private fun checkPatreonBot(data: GuildListener.GuildMessageData): Boolean {
+    private suspend fun checkPatreonBot(data: GuildListener.GuildMessageData): Boolean {
         if (!application.properties.patreon_bot) return true
         val staffIds = application.staffMemberIds
         if (staffIds.contains(data.messageReceivedEvent.author.idLong)) return true

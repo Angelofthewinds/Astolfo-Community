@@ -2,14 +2,12 @@ package xyz.astolfo.astolfocommunity.games
 
 import kotlinx.coroutines.experimental.*
 import kotlinx.coroutines.experimental.channels.Channel
-import net.dv8tion.jda.core.EmbedBuilder
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
+import xyz.astolfo.astolfocommunity.lib.jda.AstolfoEmbedBuilder
+import xyz.astolfo.astolfocommunity.lib.jda.embed
 import xyz.astolfo.astolfocommunity.lib.smartActor
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.embed
-import xyz.astolfo.astolfocommunity.messages.title
 import java.awt.Point
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -51,7 +49,7 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
 
     private val snakeActor = smartActor<SnakeEvent>(snakeContext, Channel.UNLIMITED, CoroutineStart.LAZY) {
         for (event in this.channel) {
-            if (destroyed) continue
+            if (gameState == GameState.DESTROYED) continue
             handleEvent(event)
         }
     }
@@ -64,7 +62,7 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
         snake.add(startLocation)
 
         updateJob = launch(snakeContext) {
-            while (isActive && running) {
+            while (isActive && gameState == GameState.RUNNING) {
                 snakeActor.send(SnakeEvent.UpdateEvent)
                 delay(UPDATE_SPEED, TimeUnit.SECONDS)
             }
@@ -85,7 +83,7 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
                     if (snake.any { it.x !in MAP_RANGE || it.y !in MAP_RANGE }) {
                         snake.removeAt(0)
                         setContent(embed { render("Oof your snake went outside its cage!") })
-                        safeEndGame()
+                        endGame()
                         return
                     }
 
@@ -99,7 +97,7 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
 
                     if (snake.map { c1 -> snake.filter { c1 == it }.count() }.any { it > 1 }) {
                         setContent(embed { render("Oof you ran into yourself!") })
-                        safeEndGame()
+                        endGame()
                         return
                     }
                 }
@@ -111,10 +109,10 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
 
     private fun randomPoint() = Point(random.nextInt(MAP_SIZE), random.nextInt(MAP_SIZE))
 
-    private fun EmbedBuilder.render(deadReason: String? = null) {
+    private fun AstolfoEmbedBuilder.render(deadReason: String? = null) {
         val dead = deadReason != null
-        title("${member.effectiveName}'s Snake Game - Score: ${snake.size}" + if (dead) " - Dead" else "")
-        description((0 until MAP_SIZE).joinToString(separator = "\n") { y ->
+        title = "${member.effectiveName}'s Snake Game - Score: ${snake.size}" + if (dead) " - Dead" else ""
+        description = (0 until MAP_SIZE).joinToString(separator = "\n") { y ->
             (0 until MAP_SIZE).joinToString(separator = "") { x ->
                 val point = Point(x, y)
                 if (point == appleLocation) {
@@ -134,7 +132,7 @@ class SnakeGame(member: Member, channel: TextChannel) : ReactionGame(member, cha
                     "\u2B1B"
                 }
             }
-        } + if (dead) "\n**You have died!**\n$deadReason" else "")
+        } + if (dead) "\n**You have died!**\n$deadReason" else ""
     }
 
     override suspend fun destroy() {

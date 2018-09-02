@@ -10,10 +10,12 @@ import net.dv8tion.jda.core.entities.Message
 import okhttp3.Request
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import xyz.astolfo.astolfocommunity.*
+import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
+import xyz.astolfo.astolfocommunity.AstolfoProperties
+import xyz.astolfo.astolfocommunity.AstolfoWebSocketClient
 import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
 import xyz.astolfo.astolfocommunity.lib.Utils
-import xyz.astolfo.astolfocommunity.messages.message
+import xyz.astolfo.astolfocommunity.lib.jda.message
 
 class DonationManager(private val application: AstolfoCommunityApplication,
                       properties: AstolfoProperties) {
@@ -200,7 +202,7 @@ class DonationManager(private val application: AstolfoCommunityApplication,
     fun give(idLong: Long) = synchronized(entries) {
         remove(idLong)
         // Add new
-        entries.add(PatreonEntry(idLong, idLong, SupportLevel.SUPPORTER.rewardId,  SupportLevel.SUPPORTER.cost))
+        entries.add(PatreonEntry(idLong, idLong, SupportLevel.SUPPORTER.rewardId, SupportLevel.SUPPORTER.cost))
     }
 
     fun remove(idLong: Long) = synchronized(entries) {

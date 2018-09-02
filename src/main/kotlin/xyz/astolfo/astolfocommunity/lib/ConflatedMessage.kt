@@ -7,8 +7,8 @@ import kotlinx.coroutines.experimental.launch
 import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.MessageEmbed
 import xyz.astolfo.astolfocommunity.lib.jda.contentEquals
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
-import xyz.astolfo.astolfocommunity.messages.message
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.experimental.CoroutineContext
 
@@ -47,7 +47,7 @@ internal class ConflatedMessageImpl(override val cachedMessage: CachedMessage,
     override var contentEmbed: MessageEmbed
         get() = contentMessage.embeds.first()
         set(value) {
-            contentMessage = message { setEmbed(value) }
+            contentMessage = message(value)
         }
 
     private val contentSync = Any()

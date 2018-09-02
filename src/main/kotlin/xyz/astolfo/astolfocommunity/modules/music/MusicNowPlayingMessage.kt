@@ -5,12 +5,9 @@ import kotlinx.coroutines.experimental.channels.Channel
 import kotlinx.coroutines.experimental.channels.actor
 import kotlinx.coroutines.experimental.channels.sendBlocking
 import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
-import xyz.astolfo.astolfocommunity.messages.author
-import xyz.astolfo.astolfocommunity.messages.embed
-import xyz.astolfo.astolfocommunity.messages.footer
-import xyz.astolfo.astolfocommunity.messages.message
 
 class MusicNowPlayingMessage(private val musicSession: MusicSession) {
 

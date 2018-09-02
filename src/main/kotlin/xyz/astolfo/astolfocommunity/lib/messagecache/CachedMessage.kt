@@ -10,7 +10,7 @@ import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.MessageEmbed
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.requests.RequestFuture
-import xyz.astolfo.astolfocommunity.messages.message
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import java.util.concurrent.TimeUnit
 import kotlin.properties.Delegates.observable
 
@@ -74,7 +74,7 @@ internal class CachedMessageImpl(override val jda: JDA) : CachedMessage {
 
     private val contentSynchronized = Any()
     private var contentRequestFuture: RequestFuture<Message>? = null
-    private var approvedContent = message("Message is loading...")
+    private var approvedContent: Message = message("Message is loading...")
     private var contentInternal: Message? = null
 
     override var content: String
@@ -86,7 +86,7 @@ internal class CachedMessageImpl(override val jda: JDA) : CachedMessage {
     override var contentEmbed: MessageEmbed
         get() = contentMessage.embeds.first()
         set(value) {
-            contentMessage = message { setEmbed(value) }
+            contentMessage = message(value)
         }
 
     override var contentMessage: Message

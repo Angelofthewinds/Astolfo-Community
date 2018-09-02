@@ -6,9 +6,6 @@ import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.lib.levenshteinDistance
 import xyz.astolfo.astolfocommunity.lib.splitFirst
 import xyz.astolfo.astolfocommunity.lib.words
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.errorEmbedSuspend
-import xyz.astolfo.astolfocommunity.messages.title
 
 typealias CommandAction = suspend CommandScope.() -> Unit
 typealias InheritedCommandAction = suspend CommandScope.() -> Boolean
@@ -44,10 +41,10 @@ class CommandBuilder(
                 .sortedBy { it.levenshteinDistance(commandName, true) }.firstOrNull()
         val guildPrefix = guildSettings.getEffectiveGuildPrefix(application)
         if (bestMatch == null) {
-            errorEmbedSuspend("Unknown command! Type **$guildPrefix$commandPath help** for a list of commands.").queue()
+            errorEmbed("Unknown command! Type **$guildPrefix$commandPath help** for a list of commands.").queue()
         } else {
             val recreated = "$guildPrefix$commandPath $bestMatch $commandContent".trim()
-            errorEmbedSuspend("Unknown command! Did you mean **$recreated**?").queue()
+            errorEmbed("Unknown command! Did you mean **$recreated**?").queue()
         }
     }
     private var inheritedActions = mutableListOf<InheritedCommandAction>()

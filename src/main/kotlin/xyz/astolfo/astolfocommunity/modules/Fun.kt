@@ -3,20 +3,29 @@ package xyz.astolfo.astolfocommunity.modules
 import com.github.natanbc.reliqua.request.PendingRequest
 import com.github.natanbc.weeb4j.image.HiddenMode
 import com.github.natanbc.weeb4j.image.NsfwFilter
+import com.jagrosh.jdautilities.commons.utils.FinderUtil
 import com.oopsjpeg.osu4j.backend.EndpointUsers
 import com.oopsjpeg.osu4j.backend.Osu
+import kotlinx.coroutines.experimental.runBlocking
 import kotlinx.coroutines.experimental.sync.Mutex
 import kotlinx.coroutines.experimental.sync.withLock
+import net.dv8tion.jda.core.entities.Message
 import org.jsoup.Jsoup
+import xyz.astolfo.astolfocommunity.commands.SessionListener
 import xyz.astolfo.astolfocommunity.games.*
+import xyz.astolfo.astolfocommunity.games.shiritori.ShiritoriGame
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.commands.RequestedByElement
 import xyz.astolfo.astolfocommunity.lib.commands.captureError
+import xyz.astolfo.astolfocommunity.lib.jda.embedRaw
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.lib.web
 import xyz.astolfo.astolfocommunity.lib.webJson
 import xyz.astolfo.astolfocommunity.lib.words
 import xyz.astolfo.astolfocommunity.menus.memberSelectionBuilder
-import xyz.astolfo.astolfocommunity.messages.*
+import xyz.astolfo.astolfocommunity.menus.selectionBuilder
+import java.awt.Color
 import java.math.BigInteger
 import java.util.*
 import kotlin.coroutines.experimental.suspendCoroutine
@@ -27,9 +36,9 @@ fun createFunModule() = module("Fun") {
             embed {
                 val osuPicture = "https://upload.wikimedia.org/wikipedia/commons/d/d3/Osu%21Logo_%282015%29.png"
                 title("Astolfo Osu Integration")
-                description("**sig**  -  generates an osu signature of the user" +
-                        "\n**profile**  -  gets user data from the osu api")
-                thumbnail(osuPicture)
+                description = "**sig**  -  generates an osu signature of the user" +
+                        "\n**profile**  -  gets user data from the osu api"
+                thumbnail = osuPicture
             }.queue()
         }
         command("sig", "s") {
@@ -38,8 +47,8 @@ fun createFunModule() = module("Fun") {
                 embed {
                     val url = "http://lemmmy.pw/osusig/sig.php?colour=purple&uname=$osuUsername&pp=1"
                     title("Astolfo Osu Signature", url)
-                    description("$osuUsername\'s Osu Signature!")
-                    image(url)
+                    description = "$osuUsername\'s Osu Signature!"
+                    image = url
                 }.queue()
             }
         }
@@ -180,7 +189,7 @@ fun createFunModule() = module("Fun") {
                     .let { if (it.startsWith("//")) "https:$it" else it }
             embed {
                 title("Cyanide and Happiness")
-                image(imageUrl)
+                image = imageUrl
             }.queue()
         }
     }
@@ -194,8 +203,8 @@ fun createFunModule() = module("Fun") {
             val selectedMember = memberSelectionBuilder(args).title("Hug Selection").execute() ?: return@action
             val image = application.weeb4J.imageProvider.getRandomImage("hug", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
             embed {
-                description("${event.author.asMention} has hugged ${selectedMember.asMention}")
-                image(image.url)
+                description = "${event.author.asMention} has hugged ${selectedMember.asMention}"
+                this.image = image.url
                 footer("Powered by weeb.sh")
             }.queue()
         }
@@ -205,9 +214,9 @@ fun createFunModule() = module("Fun") {
             val selectedMember = memberSelectionBuilder(args).title("Kiss Selection").execute() ?: return@action
             val image = application.weeb4J.imageProvider.getRandomImage("kiss", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
             embed {
-                description("${event.author.asMention} has kissed ${selectedMember.asMention}")
-                image(image.url)
-                footer("Powered by weeb.sh")
+                description = "${event.author.asMention} has kissed ${selectedMember.asMention}"
+                this.image = image.url
+                footer = "Powered by weeb.sh"
             }.queue()
         }
     }
@@ -217,7 +226,7 @@ fun createFunModule() = module("Fun") {
             val image = application.weeb4J.imageProvider.getRandomImage("slap", HiddenMode.DEFAULT, NsfwFilter.NO_NSFW).await()
             embed {
                 description("${event.author.asMention} has slapped ${selectedMember.asMention}")
-                image(image.url)
+                this.image = image.url
                 footer("Powered by weeb.sh")
             }.queue()
         }
@@ -268,16 +277,123 @@ fun createFunModule() = module("Fun") {
                     errorEmbed("Only one game of Shiritori is allowed per channel!").queue()
                     return@action
                 }
-                val difficulty = args.takeIf { it.isNotBlank() }?.let { string ->
-                    val choosen = ShiritoriGame.Difficulty.values().find { string.equals(it.name, true) }
-                    if (choosen == null) {
-                        errorEmbed("Unknown difficulty! Valid difficulties: **Easy**, **Normal**, **Hard**, **Impossible**").queue()
-                        return@action
-                    }
-                    choosen
-                } ?: ShiritoriGame.Difficulty.NORMAL
+                val difficulty = if (args.isBlank()) ShiritoriGame.Difficulty.NORMAL
+                else selectionBuilder<ShiritoriGame.Difficulty>()
+                        .results(ShiritoriGame.Difficulty.values().filter { it.name.contains(args, true) })
+                        .noResultsMessage("Unknown Difficulty!")
+                        .resultsRenderer { it.name }
+                        .description("Type the number of the difficulty you want.")
+                        .execute() ?: return@action
                 embed("Starting the game of Shiritori with difficulty **${difficulty.name.toLowerCase().capitalize()}**...").queue()
                 startGame(ShiritoriGame(event.member, event.channel, difficulty))
+            }
+        }
+    }
+    command("group") {
+        command("invite") {
+            description("Invite people to a group and play games together!")
+            usage("[user]")
+
+            action {
+                val group = GroupHandler.create(event.guild.idLong, event.author.idLong)
+                if (group.leaderId != event.author.idLong) {
+                    errorEmbed("You must be the leader of the group to invite!").queue()
+                    return@action
+                }
+                val selectedUser = memberSelectionBuilder(args)
+                        .description("Type the number of the member you want to invite")
+                        .execute() ?: return@action
+
+                if (selectedUser.user == event.author) {
+                    errorEmbed("You cannot invite yourself!").queue()
+                    return@action
+                }
+
+                if (GroupHandler[event.guild.idLong, selectedUser.user.idLong] != null) {
+                    errorEmbed("That user is already in a group!").queue()
+                    return@action
+                }
+
+                lateinit var invitedMessage: Message
+                val inviterMessage = embed {
+                    description = "**${selectedUser.effectiveName}** has been invited. Waiting for them to accept..."
+                    color = Color.YELLOW
+                }.sendCached()
+
+                InviteHandler.invite(event.author.idLong, selectedUser.user.idLong, event.guild.idLong, {
+                    runBlocking(SessionListener.commandContext + RequestedByElement(event.author)) {
+                        inviterMessage.contentEmbed = embed("**${selectedUser.effectiveName}** has been invited. Accepted!")
+                    }
+                    invitedMessage.editMessage(embedRaw("Invite for group in **${event.guild.name}** accepted!")).queue()
+                }) {
+                    runBlocking(SessionListener.commandContext + RequestedByElement(event.author)) {
+                        inviterMessage.contentEmbed = errorEmbed("**${selectedUser.effectiveName}** has been invited. Expired!")
+                    }
+                    invitedMessage.editMessage(embedRaw("Invite for group in **${event.guild.name}** has expired!")).queue()
+                }
+                selectedUser.user.openPrivateChannel().queue { privateChannel ->
+                    privateChannel.sendMessage(embedRaw("**${event.member.effectiveName}** has invited you to join a group in the guild **${event.guild.name}**." +
+                            " To accept, go to that guild and type **${guildSettings.getEffectiveGuildPrefix(application)}group accept ${event.member.effectiveName}**")).queue {
+                        invitedMessage = it
+                    }
+                }
+            }
+        }
+        command("accept") {
+            action {
+                if (GroupHandler[event.guild.idLong, event.author.idLong] != null) {
+                    errorEmbed("You are already in a group!").queue()
+                    return@action
+                }
+
+                val invites = InviteHandler[event.author.idLong, event.guild.idLong]
+                val selectedUser = memberSelectionBuilder(args)
+                        .results(FinderUtil.findMembers(args, event.guild).filter { member ->
+                            invites.any { (key, _) -> key.inviterId == member.user.idLong }
+                        })
+                        .noResultsMessage("No invites found!")
+                        .description("Type the number of the invite you want to accept")
+                        .execute() ?: return@action
+
+                val invite = invites.values.first { it.inviterId == selectedUser.user.idLong }!!
+                InviteHandler.remove(selectedUser.user.idLong, event.author.idLong, event.guild.idLong)
+                invite.acceptCallback()
+                if (GroupHandler.join(event.guild.idLong, selectedUser.user.idLong, event.author.idLong))
+                    embed("You accepted the invite from **${selectedUser.effectiveName}** and you have joined their group.").queue()
+                else errorEmbed("Group **${selectedUser.effectiveName}** no longer exists!").queue()
+            }
+        }
+        command("list") {
+            action {
+                val group = GroupHandler[event.guild.idLong, event.author.idLong]
+                if (group == null) {
+                    errorEmbed("You are not currently in a group!").queue()
+                    return@action
+                }
+                embed {
+                    title = "${event.guild.getMemberById(group.leaderId).effectiveName}'s Group"
+                    description = group.members.joinToString("\n") { event.guild.getMemberById(it).effectiveName }
+                }.queue()
+            }
+        }
+        command("leave") {
+            action {
+                val group = GroupHandler[event.guild.idLong, event.author.idLong]
+                if (group == null) {
+                    errorEmbed("You are not currently in a group!").queue()
+                    return@action
+                }
+                val originalLeader = group.leaderId
+                GroupHandler.leave(event.guild.idLong, event.author.idLong)
+                if (originalLeader != group.leaderId) {
+                    if (group.leaderId == -1L) {
+                        errorEmbed("You have left and the group was disbanded!").queue()
+                    } else {
+                        embed("You have left and the leadership went to **${event.guild.getMemberById(group.leaderId).effectiveName}**!").queue()
+                    }
+                } else {
+                    embed("You have left the group **${event.guild.getMemberById(group.leaderId).effectiveName}**.").queue()
+                }
             }
         }
     }

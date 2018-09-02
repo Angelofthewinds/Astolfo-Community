@@ -21,8 +21,8 @@ import xyz.astolfo.astolfocommunity.commands.argsIterator
 import xyz.astolfo.astolfocommunity.commands.next
 import xyz.astolfo.astolfocommunity.lib.*
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.menus.*
-import xyz.astolfo.astolfocommunity.messages.*
 import xyz.astolfo.astolfocommunity.modules.module
 import xyz.astolfo.astolfocommunity.support.SupportLevel
 import java.awt.Color
@@ -64,7 +64,7 @@ fun createMusicModule() = module("Music") {
                     .resultsRenderer { "`${it.id}` **${it.name}**" }
                     .renderer {
                         message {
-                            embed {
+                            embedRaw {
                                 titleProvider.invoke()?.let { title(it) }
                                 val string = providedContent.joinToString(separator = "\n")
                                 description("Type the number of the station you want\n$string")
@@ -113,7 +113,7 @@ fun createMusicModule() = module("Music") {
                 })
                 renderer {
                     message {
-                        embed {
+                        embedRaw {
                             titleProvider.invoke()?.let { title(it) }
                             val currentTrack = musicSession.playingTrack()
                             field("\uD83C\uDFB6 Now Playing" + if (currentTrack != null) " - ${Utils.formatSongDuration(musicSession.trackPosition)}/${Utils.formatSongDuration(currentTrack.info.length, currentTrack.info.isStream)}" else "", false) {
@@ -186,17 +186,16 @@ fun createMusicModule() = module("Music") {
             } else {
                 val donationEntry = application.donationManager.getByMember(event.member)
                 if (donationEntry.ordinal < supportLevel.ordinal) {
-                    embed {
+                    errorEmbed {
                         description("\uD83D\uDD12 Due to performance reasons volume changing is locked!" +
                                 " You can unlock this feature by becoming a [patreon.com/theprimedtnt](https://www.patreon.com/theprimedtnt)" +
                                 " and getting at least the **${supportLevel.rewardName}** Tier.")
-                        color(Color.RED)
                     }.queue()
                     return@musicAction
                 }
                 val oldVolume = musicSession.volume
                 musicSession.volume = newVolume
-                embed { description("${volumeIcon(newVolume)} Volume has changed from **$oldVolume%** to **$newVolume%**") }.queue()
+                embed("${volumeIcon(newVolume)} Volume has changed from **$oldVolume%** to **$newVolume%**").queue()
             }
         }
     }

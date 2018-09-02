@@ -3,7 +3,6 @@ package xyz.astolfo.astolfocommunity.modules
 import xyz.astolfo.astolfocommunity.RadioEntry
 import xyz.astolfo.astolfocommunity.menus.paginator
 import xyz.astolfo.astolfocommunity.menus.provider
-import xyz.astolfo.astolfocommunity.messages.description
 import java.net.MalformedURLException
 import java.net.URL
 

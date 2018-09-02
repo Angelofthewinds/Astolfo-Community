@@ -7,6 +7,8 @@ import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.entities.Role
 import net.dv8tion.jda.core.entities.TextChannel
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.jda.embedRaw
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.messages.*
@@ -39,7 +41,7 @@ class SelectionMenuBuilder<E>(private val commandScope: CommandScope) {
     var description = "Type the number of the selection you want"
     var renderer: Paginator.() -> Message = {
         message {
-            embed {
+            embedRaw {
                 titleProvider.invoke()?.let { title(it) }
                 description("$description\n$providedString")
                 footer("Page ${currentPage + 1}/${provider.pageCount}")

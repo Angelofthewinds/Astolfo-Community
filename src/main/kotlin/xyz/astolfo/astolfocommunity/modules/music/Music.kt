@@ -34,12 +34,12 @@ import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.AstolfoProperties
 import xyz.astolfo.astolfocommunity.lib.ASTOLFO_GSON
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.jda.embed
+import xyz.astolfo.astolfocommunity.lib.jda.embedRaw
+import xyz.astolfo.astolfocommunity.lib.jda.errorEmbed
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.lib.synchronized2
 import xyz.astolfo.astolfocommunity.menus.selectionBuilder
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.embed
-import xyz.astolfo.astolfocommunity.messages.errorEmbed
 import xyz.astolfo.astolfocommunity.support.SupportLevel
 import java.io.File
 import java.net.MalformedURLException
@@ -276,7 +276,7 @@ class MusicSession(val musicManager: MusicManager, val guild: Guild, var boundCh
         handleEvent(Destroy)
     }
 
-    private fun handleEvent(event: MusicEvent) {
+    private suspend fun handleEvent(event: MusicEvent) {
         when (event) {
             is NextSong -> {
                 synchronized2(songQueue, repeatSongQueue) {
@@ -668,7 +668,7 @@ class MusicSession(val musicManager: MusicManager, val guild: Guild, var boundCh
                 val top: Boolean,
                 val skip: Boolean
         ) {
-            private val message = textChannel.sendMessage(embed("\uD83D\uDD0E Loading **$query** to queue...")).sendCached()
+            private val message = textChannel.sendMessage(embedRaw("\uD83D\uDD0E Loading **$query** to queue...")).sendCached()
             private val completableDeferred = musicManager.audioPlayerManager.loadItemDeferred(query)
 
             init {

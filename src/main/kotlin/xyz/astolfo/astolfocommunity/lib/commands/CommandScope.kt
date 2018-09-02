@@ -12,11 +12,10 @@ import xyz.astolfo.astolfocommunity.AstolfoCommunityApplication
 import xyz.astolfo.astolfocommunity.GuildSettings
 import xyz.astolfo.astolfocommunity.commands.CommandArgs
 import xyz.astolfo.astolfocommunity.commands.CommandSession
-import xyz.astolfo.astolfocommunity.commands.ResponseListener
 import xyz.astolfo.astolfocommunity.lib.cancelQuietly
+import xyz.astolfo.astolfocommunity.lib.jda.*
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
-import xyz.astolfo.astolfocommunity.messages.*
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.experimental.AbstractCoroutineContextElement
 import kotlin.coroutines.experimental.CoroutineContext
@@ -84,20 +83,29 @@ interface CommandScope : CommandData, RequestedBy {
     fun Message.queue(success: ((Message) -> Unit)? = null) = queue(success, null)
     fun MessageEmbed.queue(success: ((Message) -> Unit)? = null) = queue(success, null)
 
-    fun Message.queue(success: ((Message) -> Unit)?, failure: ((Throwable) -> Unit)? = null) = send().queue(success, failure)
+    fun Message.queue(success: ((Message) -> Unit)?, failure: ((Throwable) -> Unit)? = null) {
+        if (this is MessageQueue) {
+            this.queue.forEach {
+                it.send().queue(success, failure)
+            }
+        } else {
+            send().queue(success, failure)
+        }
+    }
+
     fun MessageEmbed.queue(success: ((Message) -> Unit)?, failure: ((Throwable) -> Unit)? = null) = send().queue(success, failure)
 
     // Some overridden scope specific methods
 
-    suspend fun embed(text: String) = embedSuspend(text)
-    suspend fun embed(builder: SuspendingEmbedBuilderBlock) = embedSuspend(builder)
+    suspend fun embed(text: String) = embed0(text)
+    suspend fun embed(builder: EmbedBuilderBlock) = embed0(builder)
 
-    suspend fun errorEmbed(text: String) = errorEmbedSuspend(text)
-    suspend fun errorEmbed(builder: SuspendingEmbedBuilderBlock) = errorEmbedSuspend(builder)
+    suspend fun errorEmbed(text: String) = errorEmbed0(text)
+    suspend fun errorEmbed(builder: EmbedBuilderBlock) = errorEmbed0(builder)
 
     // Temp Message
 
-    suspend fun <T> tempMessage(embed: MessageEmbed, temp: suspend () -> T): T = tempMessage(message { setEmbed(embed) }, temp)
+    suspend fun <T> tempMessage(embed: MessageEmbed, temp: suspend () -> T): T = tempMessage(message(embed), temp)
     suspend fun <T> tempMessage(message: Message, block: suspend () -> T): T = suspendCancellableCoroutine { cont ->
         val cachedMessage = message.send().sendCached()
         val job = async(cont.context) { block() }

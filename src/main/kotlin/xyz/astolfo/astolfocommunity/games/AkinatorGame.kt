@@ -3,21 +3,26 @@ package xyz.astolfo.astolfocommunity.games
 import com.markozajc.akiwrapper.Akiwrapper
 import com.markozajc.akiwrapper.AkiwrapperBuilder
 import com.markozajc.akiwrapper.core.entities.Guess
-import kotlinx.coroutines.experimental.*
+import com.markozajc.akiwrapper.core.entities.Question
 import kotlinx.coroutines.experimental.channels.Channel
-import kotlinx.coroutines.experimental.channels.actor
+import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import kotlinx.coroutines.experimental.withContext
 import net.dv8tion.jda.core.entities.Member
+import net.dv8tion.jda.core.entities.MessageEmbed
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
+import xyz.astolfo.astolfocommunity.lib.Timeout
+import xyz.astolfo.astolfocommunity.lib.commands.RequestedByElement
+import xyz.astolfo.astolfocommunity.lib.flatten
 import xyz.astolfo.astolfocommunity.lib.jda.builders.eventListenerBuilder
+import xyz.astolfo.astolfocommunity.lib.jda.embed
+import xyz.astolfo.astolfocommunity.lib.jda.errorEmbed
 import xyz.astolfo.astolfocommunity.lib.levenshteinDistance
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.embed
-import xyz.astolfo.astolfocommunity.messages.image
+import xyz.astolfo.astolfocommunity.lib.smartActor
+import java.lang.Math.max
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 
 
 class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel) {
@@ -25,113 +30,99 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
     companion object {
         private val akinatorContext = newFixedThreadPoolContext(5, "Akinator")
 
-        private val answerMap: Map<String, Answer>
-        private val yesNoList = listOf(Answer.YES, Answer.NO)
-
-        init {
-            answerMap = listOf(
-                    Answer.YES to listOf("Y", "yes"),
-                    Answer.NO to listOf("N", "no"),
-                    Answer.DONT_KNOW to listOf("DK", "dont know", "don't know"),
-                    Answer.PROBABLY to listOf("P", "probably"),
-                    Answer.PROBABLY_NOT to listOf("PN", "probably not"),
-                    Answer.UNDO to listOf("U", "B", "undo", "back")
-            ).map {
-                val answer = it.first
-                it.second.map { it to answer }
-            }.flatten().toMap()
-        }
-
+        private val questionResponses = Answer.values()
+        private val guessResponses = arrayOf(Answer.YES, Answer.NO)
     }
 
-    private enum class Answer(val akiAnswer: Akiwrapper.Answer) {
-        YES(Akiwrapper.Answer.YES),
-        NO(Akiwrapper.Answer.NO),
-        DONT_KNOW(Akiwrapper.Answer.DONT_KNOW),
-        PROBABLY(Akiwrapper.Answer.PROBABLY),
-        PROBABLY_NOT(Akiwrapper.Answer.PROBABLY_NOT),
-        UNDO(Akiwrapper.Answer.PROBABLY_NOT)
+    enum class Answer(val akiAnswer: Akiwrapper.Answer, vararg val responses: String) {
+        YES(Akiwrapper.Answer.YES, "Y", "yes"),
+        NO(Akiwrapper.Answer.NO, "N", "no"),
+        DONT_KNOW(Akiwrapper.Answer.DONT_KNOW, "DK", "dont know", "don't know"),
+        PROBABLY(Akiwrapper.Answer.PROBABLY, "P", "probably"),
+        PROBABLY_NOT(Akiwrapper.Answer.PROBABLY_NOT, "PN", "probably not"),
+        UNDO(Akiwrapper.Answer.PROBABLY_NOT, "U", "B", "undo", "back");
+
+        companion object {
+            private val reverseLookUp = values().map { answer ->
+                answer.responses.associate { response ->
+                    response to answer
+                }
+            }.flatten()
+
+            fun findBestAnswer(responses: Array<Answer>, content: String): Triple<Answer, String, Int> {
+                val distanceMap = reverseLookUp.filterValues { responses.contains(it) }
+                        .mapValues { it.key.levenshteinDistance(content, true) }
+
+                val bestMatch = distanceMap.minBy { it.value }!!
+
+                return Triple(reverseLookUp[bestMatch.key]!!, bestMatch.key, bestMatch.value)
+            }
+        }
     }
 
     private val jdaListener = eventListenerBuilder<MessageReceivedEvent>(akinatorContext) {
         if (event.author.idLong != member.user.idLong || event.channel.idLong != channel.idLong) return@eventListenerBuilder
 
-        ankinatorActor.send(AkinatorEvent.MessageEvent(event.message.contentRaw))
+        akinatorActor.send(AkinatorEvent.MessageEvent(event.message.contentRaw))
     }
 
     private lateinit var akiWrapper: Akiwrapper
     private var akiState = State.ASKING
     private val hasGuessed = mutableListOf<String>()
 
-    private var timeoutJob: Job? = null
+    private var timeout = Timeout(akinatorContext, 5, TimeUnit.MINUTES) {
+        akinatorActor.send(AkinatorEvent.TimeoutEvent)
+    }
 
-    private var questionMessage: CachedMessage? = null
+    private val questionMessages = mutableListOf<QuestionMessage>()
     private var errorMessage: CachedMessage? = null
 
     private enum class State {
         ASKING,
-        GUESS,
-        ITERATING
+        GUESS
     }
 
     private sealed class AkinatorEvent {
-        object StartEvent : AkinatorEvent()
         class MessageEvent(val message: String) : AkinatorEvent()
         object NoMoreQuestions : AkinatorEvent()
         object NextQuestion : AkinatorEvent()
-        object DestroyEvent : AkinatorEvent()
         object TimeoutEvent : AkinatorEvent()
     }
 
-    private val ankinatorActor = actor<AkinatorEvent>(context = akinatorContext, capacity = Channel.UNLIMITED) {
-        for (event in this.channel) {
-            if (destroyed) continue
-            handleEvent(event)
+    private val akinatorActor = smartActor<AkinatorEvent>(context = akinatorContext, capacity = Channel.UNLIMITED) {
+        withContext(RequestedByElement(member.user)) {
+            for (event in this.channel) {
+                if (gameState == GameState.DESTROYED) continue
+                handleEvent(event)
+            }
         }
-        // Dispose messages
-        handleEvent(AkinatorEvent.DestroyEvent)
     }
 
     private suspend fun handleEvent(event: AkinatorEvent) {
         when (event) {
-            is AkinatorEvent.StartEvent -> {
-                // connect to server and start game
-                akiWrapper = AkiwrapperBuilder().build()
-                channel.jda.addEventListener(jdaListener)
-                // start the game off by asking a question
-                handleEvent(AkinatorEvent.NextQuestion)
-            }
             is AkinatorEvent.MessageEvent -> {
-                resetTimeout() // reset timeout (this is only if there's no activity happening
+                timeout.reset() // reset timeout (this is only if there's no activity happening
                 // clean up last error message (since its no longer important)
                 errorMessage?.delete()
-                errorMessage = null
 
-                val rawContent = event.message
+                val validResponses = if (akiState == State.GUESS) guessResponses else questionResponses
                 // go through all possible response choices and select the most similar
-                val bestMatch = answerMap.map { it to it.key.levenshteinDistance(rawContent, true) }
-                        .filter {
-                            // Only allow No and Yes for guesses
-                            if (akiState == State.GUESS) yesNoList.contains(it.first.value)
-                            else true
-                        }
-                        .sortedBy { it.second }.first()
+                val (matchedAnswer, matchedText, matchedScore) = Answer.findBestAnswer(validResponses, event.message)
                 // check if response is close enough to closest possible result
-                if (bestMatch.second >= max(1, bestMatch.first.key.length / 4)) {
-                    errorMessage = channel.sendMessage(embed("Unknown answer!")).sendCached()
+                if (matchedScore > max(1, matchedText.length / 3)) {
+                    errorMessage = channel.sendMessage(errorEmbed("Unknown answer!")).sendCached()
                     return
                 }
                 // stop timeout since we got a valid response
-                stopTimeout()
+                timeout.stop()
                 // Do stuff with answer
-                val answer = bestMatch.first.value
                 var bestGuess: Guess? = null
                 when (akiState) {
-                    State.GUESS, State.ITERATING -> {
+                    State.GUESS -> {
                         // If the bot is guessing
-                        if (answer == Answer.YES) {
+                        if (matchedAnswer == Answer.YES) {
                             // Guess was correct. end game
-                            channel.sendMessage("Nice! Im glad I got it correct.").queue()
+                            channel.sendMessage(embed("Nice! Im glad I got it correct.")).queue()
                             endGame()
                             return
                         } else {
@@ -140,34 +131,34 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
                             bestGuess = getGuess()
                             if (bestGuess == null) {
                                 // No more guesses left
-                                when (akiState) {
-                                    State.GUESS -> {
-                                        // Still has questions to ask (Only can guess normally if next question is valid)
-                                        channel.sendMessage("Aww, here are some more questions to narrow the result.").queue()
-                                        akiState = State.ASKING
-                                    }
-                                    State.ITERATING -> {
-                                        // No more questions to ask, defeat
-                                        handleEvent(AkinatorEvent.NoMoreQuestions)
-                                        return
-                                    }
-                                    else -> TODO("Not supposed to happen")
+                                if(akiWrapper.currentQuestion == null){
+                                    handleEvent(AkinatorEvent.NoMoreQuestions)
+                                    return
+                                }else {
+                                    // Still has questions to ask (Only can guess normally if next question is valid)
+                                    channel.sendMessage("Aww, here are some more questions to narrow the result.").queue()
+                                    akiState = State.ASKING
                                 }
                             }
                         }
                     }
                     State.ASKING -> {
                         // bot is asking a question to user
-                        if (answer == Answer.UNDO) {
+                        if (matchedAnswer == Answer.UNDO) {
                             // undo and remove current question
-                            akiWrapper.undoAnswer()
-                            questionMessage?.delete()
-                            questionMessage = null
-                            resetTimeout()
+                            if(questionMessages.size >= 2) {
+                                akiWrapper.undoAnswer()
+                                questionMessages.removeAt(0).destroy()
+                                questionMessages[0].update(null)
+                                timeout.reset()
+                            }else{
+                                errorMessage = channel.sendMessage(errorEmbed("Nothing left to undo!")).sendCached()
+                            }
                             return
                         }
+                        questionMessages[0].update(matchedAnswer)
                         // send result back to akinator
-                        if (akiWrapper.answerCurrentQuestion(answer.akiAnswer) == null) {
+                        if (akiWrapper.answerCurrentQuestion(matchedAnswer.akiAnswer) == null) {
                             // No more questions left
                             handleEvent(AkinatorEvent.NoMoreQuestions)
                             return
@@ -195,20 +186,22 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
                     return
                 }
                 // ask it and start timeout
-                questionMessage = channel.sendMessage(embed("**#${question.step + 1}** ${question.question}\n(Answer: yes/no/don't know/probably/probably not or undo)")).sendCached()
-                resetTimeout()
+                val message = QuestionMessage(question)
+                questionMessages.add(0, message)
+                message.send()
+                timeout.reset()
             }
             is AkinatorEvent.NoMoreQuestions -> {
                 // No more questions, enter the iterating state
-                akiState = State.ITERATING
+                akiState = State.GUESS
                 // Get best guess else get guess thats above 50%
-                val bestGuess = getGuess() ?: akiWrapper.getGuessesAboveProbability(0.50)
+                val bestGuess = akiWrapper.getGuessesAboveProbability(0.25)
                         .filter { !hasGuessed.contains(it.name) }
                         .sortedByDescending { it.probability }.firstOrNull()
 
                 if (bestGuess == null) {
                     // No more guesses, defeat
-                    channel.sendMessage("Aww, you have defeated me!").queue()
+                    channel.sendMessage(embed("Aww, you have defeated me!")).queue()
                     endGame()
                     return
                 }
@@ -218,18 +211,8 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
             }
             is AkinatorEvent.TimeoutEvent -> {
                 // Timeout met
-                channel.sendMessage("Akinator automatically ended since you didnt repond in time!").queue()
+                channel.sendMessage(errorEmbed("Akinator automatically ended since you didnt repond in time!")).queue()
                 endGame()
-            }
-            is AkinatorEvent.DestroyEvent -> {
-                // Destroy
-                channel.jda.removeEventListener(jdaListener)
-
-                errorMessage?.delete()
-                stopTimeout(false)
-
-                questionMessage = null
-                errorMessage = null
             }
         }
     }
@@ -237,26 +220,13 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
     private suspend fun ask(bestGuess: Guess) {
         // ask guess and start timeout
         channel.sendMessage(embed {
-            description("Is **${bestGuess.name}** correct?\n(Answer: yes/no)")
+            description = "Is **${bestGuess.name}** correct?\n(Answer: yes/no)"
             try {
-                image(bestGuess.image.toString())
+                image = bestGuess.image.toString()
             } catch (e: IllegalArgumentException) { // ignore
             }
         }).queue()
-        resetTimeout()
-    }
-
-    private suspend fun stopTimeout(join: Boolean = false) {
-        if (join) timeoutJob?.cancelAndJoin() else timeoutJob?.cancel()
-        timeoutJob = null
-    }
-
-    private suspend fun resetTimeout() {
-        stopTimeout()
-        timeoutJob = launch {
-            delay(5, TimeUnit.MINUTES)
-            ankinatorActor.send(AkinatorEvent.TimeoutEvent)
-        }
+        timeout.reset()
     }
 
     /**
@@ -268,12 +238,63 @@ class AkinatorGame(member: Member, channel: TextChannel) : Game(member, channel)
 
     override suspend fun start() {
         super.start()
-        ankinatorActor.send(AkinatorEvent.StartEvent)
+
+        // connect to server and start game
+        akiWrapper = AkiwrapperBuilder().build()
+        channel.jda.addEventListener(jdaListener)
+        // start the game off by asking a question
+        akinatorActor.send(AkinatorEvent.NextQuestion)
     }
 
     override suspend fun destroy() {
         super.destroy()
-        ankinatorActor.close()
+        channel.jda.removeEventListener(jdaListener)
+        akinatorActor.closeAndJoin()
+
+        errorMessage?.delete()
+        timeout.stop()
+
+        questionMessages.clear()
+        errorMessage = null
+    }
+
+    inner class QuestionMessage(private val question: Question) {
+
+        private lateinit var message: CachedMessage
+
+        suspend fun send() {
+            message = channel.sendMessage(constructMessage(null)).sendCached()
+        }
+
+        suspend fun update(answer: Answer?) {
+            message.contentEmbed = constructMessage(answer)
+        }
+
+        private suspend fun constructMessage(answer: Answer?): MessageEmbed {
+            val stringBuilder = StringBuilder("**#${question.step + 1}** ${question.question}\n(Answer: ")
+            fun appendAnswer(associatedAnswer: Answer, display: String){
+                val isAnswer = answer == associatedAnswer
+                if(isAnswer) stringBuilder.append("**")
+                stringBuilder.append(display)
+                if(isAnswer) stringBuilder.append("**")
+            }
+            appendAnswer(Answer.YES, "yes")
+            stringBuilder.append('/')
+            appendAnswer(Answer.NO, "no")
+            stringBuilder.append('/')
+            appendAnswer(Answer.DONT_KNOW, "don't know")
+            stringBuilder.append('/')
+            appendAnswer(Answer.PROBABLY, "probably")
+            stringBuilder.append('/')
+            appendAnswer(Answer.PROBABLY_NOT, "probably not")
+            stringBuilder.append(" or undo)")
+            return embed(stringBuilder.toString())
+        }
+
+        fun destroy(){
+            message.delete()
+        }
+
     }
 
 }

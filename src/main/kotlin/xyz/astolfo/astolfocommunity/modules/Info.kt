@@ -2,8 +2,8 @@ package xyz.astolfo.astolfocommunity.modules
 
 import net.dv8tion.jda.core.JDAInfo
 import xyz.astolfo.astolfocommunity.lib.jda.await
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.menus.memberSelectionBuilder
-import xyz.astolfo.astolfocommunity.messages.*
 import java.text.DecimalFormat
 
 fun createInfoModule() = module("Info") {
@@ -50,7 +50,7 @@ fun createInfoModule() = module("Info") {
             embed {
                 title("Astolfo Profile Pictures", selectedMember.user.avatarUrl)
                 description("${selectedMember.asMention} Profile Picture!")
-                image(selectedMember.user.effectiveAvatarUrl)
+                image = selectedMember.user.effectiveAvatarUrl
             }.queue()
         }
     }

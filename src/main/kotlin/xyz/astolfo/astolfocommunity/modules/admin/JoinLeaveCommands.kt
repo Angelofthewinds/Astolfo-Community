@@ -11,9 +11,6 @@ import xyz.astolfo.astolfocommunity.JoinLeaveSetting
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
 import xyz.astolfo.astolfocommunity.lib.commands.withGuildSettings
 import xyz.astolfo.astolfocommunity.menus.textChannelSelectionBuilder
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.field
-import xyz.astolfo.astolfocommunity.messages.title
 import xyz.astolfo.astolfocommunity.modules.ModuleBuilder
 
 fun ModuleBuilder.createJoinLeaveCommands() {

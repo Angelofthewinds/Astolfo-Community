@@ -7,8 +7,6 @@ import xyz.astolfo.astolfocommunity.lib.Utils
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.menus.paginator
 import xyz.astolfo.astolfocommunity.menus.provider
-import xyz.astolfo.astolfocommunity.messages.color
-import xyz.astolfo.astolfocommunity.messages.description
 import java.awt.Color
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -123,18 +121,18 @@ fun createCasinoModule() = module("Casino") {
                     if (isFinished()) {
                         description += when {
                             result < 0 -> {
-                                color(Color.RED)
+                                color = Color.RED
                                 "\n\n\u274C Sorry, you lost ***${result.absoluteValue} credits***... You now have **${profile.credits} credits**"
                             }
                             result == 0L -> {
-                                color(Color.YELLOW)
+                                color = Color.YELLOW
                                 "\n\n Sorry, you didnt win anything this time!"
                             }
                             result > 0 -> "\n\n\uD83D\uDCB0 Congrats, you won a total of ***${result.absoluteValue} credits!*** You now have **${profile.credits} credits**"
                             else -> TODO("Um what")
                         }
                     }
-                    description(description)
+                    this.description = description
                 }
             }
 

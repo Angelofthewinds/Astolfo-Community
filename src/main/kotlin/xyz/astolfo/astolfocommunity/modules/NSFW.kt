@@ -2,8 +2,6 @@ package xyz.astolfo.astolfocommunity.modules
 
 import xyz.astolfo.astolfocommunity.ResourceManager.getImage
 import xyz.astolfo.astolfocommunity.lib.webJson
-import xyz.astolfo.astolfocommunity.messages.image
-import xyz.astolfo.astolfocommunity.messages.title
 import java.util.*
 
 fun createNSFWModule() = module("NSFW", nsfw = true) {
@@ -24,7 +22,7 @@ fun createNSFWModule() = module("NSFW", nsfw = true) {
             }
             embed {
                 title("Astolfo NSFW")
-                image(data.url)
+                image = data.url
             }.queue()
         }
     }
@@ -38,7 +36,7 @@ fun createNSFWModule() = module("NSFW", nsfw = true) {
             }
             embed {
                 title("Astolfo NSFW")
-                image(data.url)
+                image = data.url
             }.queue()
         }
     }
@@ -51,7 +49,7 @@ fun createNSFWModule() = module("NSFW", nsfw = true) {
             }
             embed {
                 title("Astolfo NSFW")
-                image(image.fileUrl)
+                this.image = image.fileUrl
             }.queue()
         }
     }

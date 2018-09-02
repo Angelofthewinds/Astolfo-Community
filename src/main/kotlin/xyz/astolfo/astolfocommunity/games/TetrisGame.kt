@@ -6,13 +6,11 @@ import kotlinx.coroutines.experimental.channels.actor
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
 import kotlinx.coroutines.experimental.newFixedThreadPoolContext
-import net.dv8tion.jda.core.EmbedBuilder
 import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
-import xyz.astolfo.astolfocommunity.messages.description
-import xyz.astolfo.astolfocommunity.messages.embed
-import xyz.astolfo.astolfocommunity.messages.title
+import xyz.astolfo.astolfocommunity.lib.jda.AstolfoEmbedBuilder
+import xyz.astolfo.astolfocommunity.lib.jda.embed
 import java.awt.Point
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -65,7 +63,7 @@ class TetrisGame(member: Member, channel: TextChannel) : ReactionGame(member, ch
 
     private val tetrisActor = actor<TetrisEvent>(context = tetrisContext, capacity = Channel.UNLIMITED) {
         for (event in this.channel) {
-            if (destroyed) continue
+            if (gameState == GameState.DESTROYED) continue
             handleEvent(event)
         }
 
@@ -163,7 +161,7 @@ class TetrisGame(member: Member, channel: TextChannel) : ReactionGame(member, ch
         tetrisActor.send(StartEvent)
     }
 
-    private fun EmbedBuilder.render(dead: Boolean = false) {
+    private fun AstolfoEmbedBuilder.render(dead: Boolean = false) {
         val quickFallTetromino = fallingTetromino.let {
             val newTetromino = Tetromino(it.blocks.map { Block(Point(it.location), "❌") })
             while (newTetromino.move(0, 1));

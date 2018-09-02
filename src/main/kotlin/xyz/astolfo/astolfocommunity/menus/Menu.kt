@@ -4,9 +4,9 @@ import net.dv8tion.jda.core.entities.Message
 import net.dv8tion.jda.core.events.message.react.GenericMessageReactionEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import xyz.astolfo.astolfocommunity.lib.commands.CommandScope
+import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.CachedMessage
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
-import xyz.astolfo.astolfocommunity.messages.*
 import kotlin.math.max
 import kotlin.math.min
 
@@ -15,7 +15,7 @@ fun CommandScope.paginator(titleProvider: String? = "", builder: PaginatorBuilde
 fun CommandScope.paginator(titleProvider: () -> String? = { null }, builder: PaginatorBuilder.() -> Unit): Paginator {
     val paginatorBuilder = PaginatorBuilder(this, titleProvider, PaginatorProvider(0) { listOf() }) {
         message {
-            embed {
+            embedRaw {
                 titleProvider.invoke()?.let { title(it) }
                 description(providedString)
                 footer("Page ${currentPage + 1}/${provider.pageCount}")
@@ -82,12 +82,12 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
             }
         }
 
-    private var message: CachedMessage? = null
+    private var cachedMessage: CachedMessage? = null
 
     private val listener = object : ListenerAdapter() {
         override fun onGenericMessageReaction(event: GenericMessageReactionEvent?) {
             if (event!!.user.idLong != commandExecution.event.author.idLong) return
-            if (message?.idLong != event.messageIdLong) return
+            if (cachedMessage?.idLong != event.messageIdLong) return
             val name = event.reactionEmote.name
             if (name == SELECT) {
                 destroy()
@@ -117,8 +117,8 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
         if (isDestroyed) return
         isDestroyed = true
         commandExecution.event.jda.removeEventListener(listener)
-        message?.delete()
-        message = null
+        cachedMessage?.delete()
+        cachedMessage = null
     }
 
     companion object {
@@ -132,8 +132,8 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
     fun render() {
         if (isDestroyed) return
         val newMessage = renderer.invoke(this@Paginator)
-        if (message == null) {
-            message = commandExecution.run { newMessage.send() }.sendCached()
+        if (cachedMessage == null) {
+            cachedMessage = commandExecution.run { newMessage.send() }.sendCached()
 
             val pageCount = provider.pageCount
             val emotes = mutableListOf<String>()
@@ -143,9 +143,9 @@ class Paginator(private val commandExecution: CommandScope, val titleProvider: (
             if (pageCount > 1) emotes.add(FORWARD_ARROW)
             if (pageCount > 2) emotes.add(END_ARROW)
 
-            emotes.forEach { message!!.reactions += it }
+            emotes.forEach { cachedMessage!!.reactions += it }
         } else {
-            message!!.contentMessage = newMessage
+            cachedMessage!!.contentMessage = newMessage
         }
     }
 
