@@ -16,7 +16,7 @@ abstract class GroupGame(member: Member, channel: TextChannel, val singlePlayerM
         val group = GroupHandler[member.guild.idLong, member.user.idLong]?.takeIf { it.allMembers.size >= 2 }
 
         _players = if (group == null) {
-            when(singlePlayerMode){
+            when (singlePlayerMode) {
                 SinglePlayerMode.NONE -> {
                     channel.sendMessage(errorEmbed("This game must be played with 2 or more people!")).queue()
                     endGame()
@@ -32,6 +32,13 @@ abstract class GroupGame(member: Member, channel: TextChannel, val singlePlayerM
 
         super.start0()
     }
+
+    open suspend fun leave0(member: Member) {
+        _players.remove(member.user.idLong)
+        leave(member)
+    }
+
+    protected open suspend fun leave(member: Member) {}
 
     override suspend fun destroy0() {
         super.destroy0()

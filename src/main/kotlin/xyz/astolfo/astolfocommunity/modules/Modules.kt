@@ -3,6 +3,7 @@ package xyz.astolfo.astolfocommunity.modules
 import xyz.astolfo.astolfocommunity.commands.Command
 import xyz.astolfo.astolfocommunity.commands.CommandBuilder
 import xyz.astolfo.astolfocommunity.commands.InheritedCommandAction
+import xyz.astolfo.astolfocommunity.modules.`fun`.createFunModule
 import xyz.astolfo.astolfocommunity.modules.admin.createAdminModule
 import xyz.astolfo.astolfocommunity.modules.music.createMusicModule
 

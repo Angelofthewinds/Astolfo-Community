@@ -102,6 +102,23 @@ class ShiritoriGame(member: Member, channel: TextChannel, private val difficulty
         channel.jda.addEventListener(jdaListener)
     }
 
+    override suspend fun leave(member: Member) {
+        if(players.size < 2) {
+            endGame()
+            return
+        }
+        val currentTurn = playerMap[member.user.idLong]!!
+        if(currentTurn.member == member) {
+            yourTurnMessage?.delete()
+            turnId++
+            if(turnId >= players.size) {
+                turnId = 0
+            }
+            yourTurnMessage = channel.sendMessage("**${this.currentTurn.member.effectiveName}:** It is now your turn now since ${currentTurn.member.effectiveName} has left.").sendCached()
+        }
+        playerMap.remove(member.user.idLong)?.dispose()
+    }
+
     override suspend fun destroy() {
         super.destroy()
         channel.jda.removeEventListener(jdaListener)

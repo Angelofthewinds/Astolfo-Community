@@ -2,8 +2,11 @@ package xyz.astolfo.astolfocommunity.games
 
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
-import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.experimental.CoroutineStart
 import kotlinx.coroutines.experimental.channels.Channel
+import kotlinx.coroutines.experimental.launch
+import kotlinx.coroutines.experimental.newFixedThreadPoolContext
+import kotlinx.coroutines.experimental.newSingleThreadContext
 import kotlinx.coroutines.experimental.sync.Mutex
 import kotlinx.coroutines.experimental.sync.withLock
 import net.dv8tion.jda.core.Permission
@@ -20,34 +23,72 @@ import xyz.astolfo.astolfocommunity.lib.jda.builders.listenerBuilder
 import xyz.astolfo.astolfocommunity.lib.jda.message
 import xyz.astolfo.astolfocommunity.lib.messagecache.sendCached
 import xyz.astolfo.astolfocommunity.lib.smartActor
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 object GameHandler {
 
     private val gameHandlerContext = newSingleThreadContext("Game Handler")
 
+    private val nextId = AtomicLong()
+
     private val gameSessionCache = CacheBuilder.newBuilder()
             .expireAfterAccess(1, TimeUnit.HOURS)
-            .removalListener<GameSessionKey, GameSession> {
-                if (it.value.game != null) launch(gameHandlerContext) { it.value.stopGame() }
+            .removalListener<Long, GameSession> { (id, gameSession) ->
+                if (gameSession.game != null) launch(gameHandlerContext) { gameSession.stopGame() }
+                playerMap.filterValues { it == id }.forEach { key, _ -> playerMap.remove(key) }
             }
-            .build(object : CacheLoader<GameSessionKey, GameSession>() {
-                override fun load(key: GameSessionKey): GameSession = GameSession()
+            .build(object : CacheLoader<Long, GameSession>() {
+                override fun load(key: Long): GameSession = GameSession()
             })
 
-    private suspend fun startGame(sessionKey: GameSessionKey, game: Game) =
-            gameSessionCache[sessionKey]!!.also { it.startGame(game) }
+    private val playerMap = ConcurrentHashMap<GameSessionKey, Long>()
 
-    private suspend fun stopGame(sessionKey: GameSessionKey) {
-        gameSessionCache.getIfPresent(sessionKey)?.stopGame()
+    private suspend fun startGame(sessionKey: GameSessionKey, game: Game) {
+        val id = playerMap.computeIfAbsent(sessionKey) { nextId.incrementAndGet() }
+        gameSessionCache[id]!!.also { it.startGame(game) }
     }
 
-    operator fun get(channelId: Long, userId: Long): GameSession = gameSessionCache.get(GameSessionKey(channelId, userId))
+    private suspend fun stopGame(sessionKey: GameSessionKey) {
+        val id = playerMap[sessionKey] ?: return
+        gameSessionCache.getIfPresent(id)?.stopGame()
+    }
 
-    fun getAllInChannel(channelId: Long): Collection<GameSession> = gameSessionCache.getAll(gameSessionCache.asMap().keys.filter { it.channelId == channelId }).values
+    operator fun get(channelId: Long, userId: Long): GameSession? {
+        val id = playerMap.computeIfAbsent(GameSessionKey(channelId, userId)) { nextId.incrementAndGet() }
+        return gameSessionCache.get(id)
+    }
 
-    suspend fun stopGame(channelId: Long, userId: Long) = stopGame(GameSessionKey(channelId, userId))
-    suspend fun startGame(channelId: Long, userId: Long, game: Game) = startGame(GameSessionKey(channelId, userId), game)
+    fun getAllInChannel(channelId: Long): Collection<GameSession> = gameSessionCache.getAll(playerMap.filterKeys { it.channelId == channelId }.values).values
+
+    suspend fun stopGame(channelId: Long, userId: Long) {
+        val sessionKey = GameSessionKey(channelId, userId)
+        val id = playerMap[sessionKey] ?: return
+        stopGame(sessionKey)
+        playerMap.filterValues { it == id }.forEach { key, _ -> playerMap.remove(key) }
+    }
+
+    suspend fun startGame(channelId: Long, userId: Long, game: Game) {
+        val sessionKey = GameSessionKey(channelId, userId)
+        startGame(sessionKey, game)
+        if (game is GroupGame) {
+            val id = playerMap[sessionKey]!!
+            game.players.forEach {
+                playerMap[GameSessionKey(channelId, it)] = id
+            }
+        }
+    }
+
+    suspend fun leaveGame(channelId: Long, member: Member) {
+        val sessionKey = GameSessionKey(channelId, member.user.idLong)
+        val id = playerMap[sessionKey] ?: return
+        val game = gameSessionCache.getIfPresent(id)?.game ?: return
+        if (game is GroupGame) {
+            game.leave0(member)
+            playerMap.remove(sessionKey)
+        }
+    }
 
     data class GameSessionKey(val channelId: Long, val userId: Long)
 
