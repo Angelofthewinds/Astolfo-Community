@@ -13,7 +13,7 @@ import xyz.astolfo.astolfocommunity.modules.SubModuleBase
 
 class RadioSubModule(musicManager: MusicManager) : SubModuleBase() {
 
-    private val shoutcastRadio = ShoutcastRadio("IzodhfJsa6EVBQAT")
+    private val shoutcastRadio = ShoutcastRadio("")
 
     override fun ModuleBuilder.create() {
         command("radio") {
