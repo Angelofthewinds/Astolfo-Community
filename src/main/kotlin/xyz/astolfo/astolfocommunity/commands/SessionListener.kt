@@ -14,7 +14,6 @@ import xyz.astolfo.astolfocommunity.lib.hasPermission
 import xyz.astolfo.astolfocommunity.lib.jda.errorEmbed
 import xyz.astolfo.astolfocommunity.lib.splitFirst
 import xyz.astolfo.astolfocommunity.modules.Module
-import xyz.astolfo.astolfocommunity.modules.ModuleManager
 import java.util.concurrent.TimeUnit
 
 class SessionListener(
@@ -247,7 +246,7 @@ class SessionListener(
     }
 
     private fun resolvePath(commandMessage: String): Pair<Module, List<PathNode>>? {
-        for (module in ModuleManager.modules) return module to (resolvePath(module.commands, "", commandMessage)
+        for (module in application.modules) return module to (resolvePath(module.commands, "", commandMessage)
                 ?: continue)
         return null
     }

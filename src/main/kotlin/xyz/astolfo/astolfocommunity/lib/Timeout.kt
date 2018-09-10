@@ -9,6 +9,7 @@ import kotlin.coroutines.experimental.CoroutineContext
 class Timeout(val context: CoroutineContext,
               val time: Long,
               val unit: TimeUnit,
+              val parentJob: Job? = null,
               val callback: suspend () -> Unit) {
 
     private var job: Job? = null
@@ -16,18 +17,22 @@ class Timeout(val context: CoroutineContext,
     val isActive
         get() = job?.isActive ?: false
 
+    @Synchronized
     fun start() {
-        job = launch(context) {
+        if(job != null) return
+        job = launch(context, parent = parentJob) {
             delay(time, unit)
             callback()
         }
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
     }
 
+    @Synchronized
     fun reset() {
         stop()
         start()

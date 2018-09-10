@@ -15,6 +15,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.text.NumberFormat
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -258,8 +259,36 @@ fun Any.createLogger(): Logger {
     return LoggerFactory.getLogger(if (kclazz.isCompanion) kclazz.java.enclosingClass else kclazz.java)
 }
 
-fun  <K, V> List<Map<K,V>>.flatten(): Map<K, V> {
+fun <K, V> List<Map<K, V>>.flatten(): Map<K, V> {
     val map = mutableMapOf<K, V>()
     forEach(map::putAll)
     return map
+}
+
+fun <T> List<T>.random(random: Random = Random()): T = get(random.nextInt(size))
+fun <T> List<T>.randomOrNull(random: Random = Random()): T? = if (isEmpty()) null else getOrNull(random.nextInt(size))
+
+fun <T> Deque<T>.addAllLast(collection: Collection<T>) = collection.forEach(::addLast)
+fun <T> Deque<T>.removeAt(index: Int): T? {
+    var currentIndex = 0
+    var removed: T? = null
+    removeIf {
+        val doRemove = currentIndex++ == index
+        if (doRemove) removed = it
+        doRemove
+    }
+    return removed
+}
+
+fun <T> Deque<T>.add(index: Int, element: T): Any {
+    return when {
+        index == 0 -> addFirst(element)
+        index >= size -> addLast(element)
+        else -> {
+            val toMove = toList().subList(index, size)
+            removeAll(toMove)
+            addLast(element)
+            addAllLast(toMove)
+        }
+    }
 }

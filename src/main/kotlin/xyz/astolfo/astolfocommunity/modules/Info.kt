@@ -35,9 +35,9 @@ fun createInfoModule() = module("Info") {
                         "\n${numberFormatter.format(totalChannels)} *channels*" +
                         "\n${numberFormatter.format(userCount)} *users*" +
                         "\n${application.shardManager.shards.size} *Shards (#${event.jda.shardInfo.shardId + 1})*", true)
-                field("Music", "${numberFormatter.format(application.musicManager.sessionCount)} *sessions*" +
+                /*field("Music", "${numberFormatter.format(application.musicManager.sessionCount)} *sessions*" +
                         "\n${numberFormatter.format(application.musicManager.queuedSongCount)} *queued songs*" +
-                        "\n${numberFormatter.format(application.musicManager.listeningCount)} *listening*", true)
+                        "\n${numberFormatter.format(application.musicManager.listeningCount)} *listening*", true)*/
                 field("Version", "v1.0.26", true) // Number of commits? idk
                 field("Library", "JDA ${JDAInfo.VERSION}", true)
                 field("Our support server", "https://discord.gg/23RB2Wc", true)
@@ -88,7 +88,7 @@ fun createInfoModule() = module("Info") {
                 title("Astolfo Command Help")
                 description("If you're having  trouble with anything, you can always stop by our support server!" +
                         "\nInvite Link: https://discord.gg/23RB2Wc")
-                for (module in ModuleManager.modules) {
+                for (module in application.modules) {
                     if ((module.hidden) || (module.nsfw && !this@action.event.channel.isNSFW)) continue
                     val commandNames = module.commands.joinToString(" ") { "`${it.varient.name}` " }
                     field("${module.name} Commands", commandNames, false)

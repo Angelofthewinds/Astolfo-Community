@@ -1,7 +1,5 @@
 package xyz.astolfo.astolfocommunity
 
-import com.github.natanbc.weeb4j.TokenType
-import com.github.natanbc.weeb4j.Weeb4J
 import com.timgroup.statsd.NonBlockingStatsDClient
 import io.sentry.Sentry
 import kotlinx.coroutines.experimental.delay
@@ -13,6 +11,7 @@ import net.dv8tion.jda.core.entities.Game
 import net.dv8tion.jda.core.events.guild.GuildJoinEvent
 import net.dv8tion.jda.core.events.guild.GuildLeaveEvent
 import net.dv8tion.jda.core.events.message.guild.GuildMessageReceivedEvent
+import net.dv8tion.jda.core.hooks.InterfacedEventManager
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -24,23 +23,32 @@ import org.springframework.context.annotation.Bean
 import org.springframework.web.servlet.HandlerExceptionResolver
 import xyz.astolfo.astolfocommunity.commands.MessageListener
 import xyz.astolfo.astolfocommunity.lib.messagecache.MessageCache
-import xyz.astolfo.astolfocommunity.modules.ModuleManager
+import xyz.astolfo.astolfocommunity.modules.*
+import xyz.astolfo.astolfocommunity.modules.`fun`.FunModule
 import xyz.astolfo.astolfocommunity.modules.admin.JoinLeaveManager
-import xyz.astolfo.astolfocommunity.modules.music.MusicManager
+import xyz.astolfo.astolfocommunity.modules.admin.createAdminModule
+import xyz.astolfo.astolfocommunity.modules.music.MusicModule
 import xyz.astolfo.astolfocommunity.support.DonationManager
 import java.util.concurrent.TimeUnit
 
 
-@Suppress("LeakingThis")
+@Suppress("LeakingThis", "RedundantModalityModifier")
 @SpringBootApplication
 @EnableCaching
 @EnableConfigurationProperties(AstolfoProperties::class)
-class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
-                                  val properties: AstolfoProperties) {
+open class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
+                                       val properties: AstolfoProperties) {
+
+    val eventManager = InterfacedEventManager()
+
+    val funModule = FunModule(this)
+    val musicModule = MusicModule(this)
+
+    val modules: List<Module>
+
+    // Clean Up
 
     final val donationManager = DonationManager(this, properties)
-    final val musicManager = MusicManager(this, properties)
-    final val weeb4J = Weeb4J.Builder().setToken(TokenType.WOLKE, properties.weeb_token).build()
     final val messageListener = MessageListener(this)
     final val shardManager: ShardManager
     // TODO: Move this to a better location
@@ -49,17 +57,32 @@ class AstolfoCommunityApplication(val astolfoRepositories: AstolfoRepositories,
 
     init {
         if (properties.sentry_dsn.isNotBlank()) Sentry.init(properties.sentry_dsn)
-        ModuleManager.registerModules()
+
+        modules = listOf(
+                createInfoModule(),
+                funModule.createModule(),
+                musicModule.createModule(),
+                createAdminModule(),
+                createCasinoModule(),
+                createStaffModule(),
+                createNSFWModule()
+        )
 
         val statsListener = StatsListener(this)
+
+        eventManager.register(messageListener.listener)
+        eventManager.register(statsListener)
+        eventManager.register(JoinLeaveManager(this).listener)
+
         val shardManagerBuilder = DefaultShardManagerBuilder()
                 .setCompressionEnabled(true)
                 .setToken(properties.token)
                 .setStatus(OnlineStatus.DO_NOT_DISTURB)
                 .setGame(Game.watching("myself boot"))
-                .addEventListeners(messageListener.listener, statsListener, musicManager.lavaLink, musicManager.musicManagerListener, JoinLeaveManager(this).listener)
+                .setEventManager(eventManager)
                 .setEnableShutdownHook(false)
                 .setShardsTotal(properties.shard_count)
+
         if (properties.custom_gateway_enabled) shardManagerBuilder.setSessionController(AstolfoSessionController(properties.custom_gateway_url, properties.custom_gateway_delay))
         shardManager = shardManagerBuilder.build()
         statsListener.init()
@@ -112,11 +135,12 @@ class StatsListener(val application: AstolfoCommunityApplication) : ListenerAdap
         launch {
             while (isActive) {
                 application.statsDClient.recordGaugeValue("guilds", application.shardManager.guilds.size.toLong())
-                application.statsDClient.recordGaugeValue("musicsessions", application.musicManager.sessionCount.toLong())
-                application.statsDClient.recordGaugeValue("musiclinks", application.musicManager.lavaLink.links.size.toLong())
-                application.statsDClient.recordGaugeValue("musiclinksconnected", application.musicManager.lavaLink.links.filter {
+                // TODO
+                /*application.statsDClient.recordGaugeValue("musicsessions", application.musicModule.musicManager.sessionCount.toLong())
+                application.statsDClient.recordGaugeValue("musiclinks", application.musicModule.musicManager.lavaLink.links.size.toLong())
+                application.statsDClient.recordGaugeValue("musiclinksconnected", application.musicModule.musicManager.lavaLink.links.filter {
                     it.jda.getGuildById(it.guildIdLong)?.selfMember?.voiceState?.inVoiceChannel() == true
-                }.size.toLong())
+                }.size.toLong())*/
                 application.statsDClient.recordGaugeValue("users", application.shardManager.users.toSet().size.toLong())
                 application.statsDClient.recordGaugeValue("cachedmessages", MessageCache.cachedMessageCount.toLong())
                 delay(1, TimeUnit.MINUTES)

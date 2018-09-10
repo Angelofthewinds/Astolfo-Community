@@ -3,7 +3,6 @@ package xyz.astolfo.astolfocommunity
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import xyz.astolfo.astolfocommunity.commands.Command
-import xyz.astolfo.astolfocommunity.modules.ModuleManager
 
 @RestController
 @RequestMapping("/api")
@@ -13,7 +12,7 @@ class Dashboard(val application: AstolfoCommunityApplication) {
     fun stats() = Stats(application.shardManager.guildCache.size(), application.shardManager.userCache.size())
 
     @RequestMapping("/commands")
-    fun commands() = CommandModuleMap(ModuleManager.modules.filterNot { it.hidden || it.nsfw }.map { module ->
+    fun commands() = CommandModuleMap(application.modules.filterNot { it.hidden || it.nsfw }.map { module ->
         module.name to module.commands.map { command ->
             commands(command)
         }.flatten().toMap()

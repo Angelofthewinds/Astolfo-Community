@@ -30,15 +30,15 @@ private const val default_extraCharactersPerLine = 20
 
 fun PaginatorBuilder.provider(perPage: Int, provider: List<String>, extraCharactersPerLine: Int = default_extraCharactersPerLine) = provider(perPage, { provider }, extraCharactersPerLine)
 fun PaginatorBuilder.provider(perPage: Int, provider: () -> List<String>, extraCharactersPerLine: Int = default_extraCharactersPerLine) {
-    this.provider = PaginatorProvider(perPage, extraCharactersPerLine, provider)
+    this.paginationProvider = PaginatorProvider(perPage, extraCharactersPerLine, provider)
 }
 
 fun PaginatorBuilder.renderer(renderer: Paginator.() -> Message) {
-    this.renderer = renderer
+    this.paginationRenderer = renderer
 }
 
-class PaginatorBuilder(private val commandExecution: CommandScope, var titleProvider: () -> String?, var provider: PaginatorProvider, var renderer: Paginator.() -> Message) {
-    fun build() = Paginator(commandExecution, titleProvider, provider, renderer)
+class PaginatorBuilder(private val commandExecution: CommandScope, var titleProvider: () -> String?, var paginationProvider: PaginatorProvider, var paginationRenderer: Paginator.() -> Message) {
+    fun build() = Paginator(commandExecution, titleProvider, paginationProvider, paginationRenderer)
 }
 
 class PaginatorProvider(val perPage: Int,

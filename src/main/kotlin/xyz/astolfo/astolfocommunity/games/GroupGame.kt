@@ -4,7 +4,12 @@ import net.dv8tion.jda.core.entities.Member
 import net.dv8tion.jda.core.entities.TextChannel
 import xyz.astolfo.astolfocommunity.lib.jda.errorEmbed
 
-abstract class GroupGame(member: Member, channel: TextChannel, val singlePlayerMode: SinglePlayerMode) : Game(member, channel) {
+abstract class GroupGame(
+        member: Member,
+        channel: TextChannel,
+        private val singlePlayerMode: SinglePlayerMode,
+        val maxPlayers: Int = Int.MAX_VALUE
+) : Game(member, channel) {
 
     private lateinit var _players: MutableList<Long>
     val players: List<Long>
@@ -28,6 +33,12 @@ abstract class GroupGame(member: Member, channel: TextChannel, val singlePlayerM
         } else {
             val players = group.allMembers
             players.filter { member.guild.getMemberById(it) != null }.toMutableList()
+        }
+
+        if (_players.size > maxPlayers) {
+            channel.sendMessage(errorEmbed("There are too many players, please remove someone from your group.")).queue()
+            endGame()
+            return
         }
 
         super.start0()

@@ -3,24 +3,23 @@ package xyz.astolfo.astolfocommunity.modules
 import xyz.astolfo.astolfocommunity.commands.Command
 import xyz.astolfo.astolfocommunity.commands.CommandBuilder
 import xyz.astolfo.astolfocommunity.commands.InheritedCommandAction
-import xyz.astolfo.astolfocommunity.modules.`fun`.createFunModule
-import xyz.astolfo.astolfocommunity.modules.admin.createAdminModule
-import xyz.astolfo.astolfocommunity.modules.music.createMusicModule
 
-internal object ModuleManager {
-    var modules = listOf<Module>()
-        private set
+abstract class ModuleBase(val name: String,
+                          val hidden: Boolean = false,
+                          val nsfw: Boolean = false) {
 
-    fun registerModules() {
-        modules = listOf(
-                createInfoModule(),
-                createFunModule(),
-                createMusicModule(),
-                createAdminModule(),
-                createCasinoModule(),
-                createStaffModule(),
-                createNSFWModule()
-        )
+    abstract fun ModuleBuilder.create()
+
+    fun createModule() = ModuleBuilder(name, hidden, nsfw).apply {
+        create()
+    }.build()
+}
+
+abstract class SubModuleBase {
+    abstract fun ModuleBuilder.create()
+
+    fun createHelper(moduleBuilder: ModuleBuilder) = with(moduleBuilder) {
+        create()
     }
 }
 
@@ -50,6 +49,7 @@ class ModuleBuilder(
     fun build() = Module(name, hidden, nsfw, inheritedActions, commands)
 }
 
+@Deprecated("Use module base instead")
 inline fun module(
         name: String,
         hidden: Boolean = false,
